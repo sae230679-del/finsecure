@@ -2130,7 +2130,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Настройки Yookassa не заполнены" });
       }
 
-      const auth = Buffer.from(`${shopId}:${secretKey}`).toString("base64");
+      const auth = Buffer.from(`${shopId.value}:${secretKey.value}`).toString("base64");
       
       const response = await fetch("https://api.yookassa.ru/v3/me", {
         method: "GET",
