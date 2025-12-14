@@ -1,0 +1,464 @@
+import { useState } from "react";
+import { useLocation, useRoute } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { 
+  PAYMENT_METHODS, 
+  type PaymentMethodType, 
+  YookassaLogo,
+  PaymentMethodsDisplay 
+} from "@/components/payment-icons";
+import { formatPrice } from "@/lib/packages-data";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { Audit, Payment } from "@shared/schema";
+import {
+  Shield,
+  CheckCircle2,
+  Loader2,
+  ArrowLeft,
+  Lock,
+  AlertCircle,
+  Clock,
+  Building2,
+  Tag,
+  X,
+} from "lucide-react";
+
+type PaymentStatus = "idle" | "processing" | "success" | "error";
+
+export default function CheckoutPage() {
+  const [, params] = useRoute("/checkout/:auditId");
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  
+  const auditId = params?.auditId ? parseInt(params.auditId) : null;
+  
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodType>("sbp");
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("idle");
+  const [isB2B, setIsB2B] = useState(false);
+  
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromoCode, setAppliedPromoCode] = useState<{
+    id: number;
+    code: string;
+    discountType: string;
+    discountPercent: number | null;
+    discountAmount: number | null;
+  } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+
+  const { data: audit, isLoading: auditLoading } = useQuery<Audit>({
+    queryKey: ["/api/audits", auditId],
+    enabled: !!auditId,
+  });
+
+  const { data: auditPackage } = useQuery<{ name: string; price: number }>({
+    queryKey: ["/api/packages", audit?.packageId],
+    enabled: !!audit?.packageId,
+  });
+
+  const paymentMutation = useMutation({
+    mutationFn: async (data: { auditId: number; paymentMethod: PaymentMethodType; promoCodeId?: number; finalAmount?: number }) => {
+      const response = await apiRequest("POST", "/api/payments/create", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.confirmationUrl) {
+        window.location.href = data.confirmationUrl;
+        return;
+      }
+      
+      setPaymentStatus("success");
+      queryClient.invalidateQueries({ queryKey: ["/api/audits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      toast({
+        title: "Оплата успешно завершена",
+        description: "Аудит запущен. Вы получите уведомление по завершении.",
+      });
+      setTimeout(() => {
+        navigate(`/dashboard/audits/${auditId}`);
+      }, 2000);
+    },
+    onError: (error: Error) => {
+      setPaymentStatus("error");
+      toast({
+        title: "Ошибка оплаты",
+        description: error.message || "Не удалось провести платеж. Попробуйте другой способ.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const promoMutation = useMutation({
+    mutationFn: async (data: { code: string; amount: number; targetType: string; targetId: number }) => {
+      const response = await apiRequest("POST", "/api/promo-codes/apply", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAppliedPromoCode(data.promoCode);
+      setPromoError(null);
+      setPromoCodeInput("");
+      toast({
+        title: "Промокод применён",
+        description: `Скидка ${data.promoCode.discountType === "percent" 
+          ? `${data.promoCode.discountPercent}%` 
+          : formatPrice(data.promoCode.discountAmount || 0)}`,
+      });
+    },
+    onError: (error: Error) => {
+      setPromoError(error.message || "Недействительный промокод");
+    },
+  });
+
+  const handleApplyPromoCode = () => {
+    if (!promoCodeInput.trim() || !audit?.packageId || !auditPackage?.price) return;
+    setPromoError(null);
+    promoMutation.mutate({ 
+      code: promoCodeInput.trim().toUpperCase(), 
+      amount: auditPackage.price,
+      targetType: "packages",
+      targetId: audit.packageId,
+    });
+  };
+
+  const handleRemovePromoCode = () => {
+    setAppliedPromoCode(null);
+    setPromoError(null);
+  };
+
+  const calculateDiscount = () => {
+    if (!appliedPromoCode || !auditPackage?.price) return 0;
+    if (appliedPromoCode.discountType === "percent" && appliedPromoCode.discountPercent) {
+      return Math.round(auditPackage.price * appliedPromoCode.discountPercent / 100);
+    }
+    if (appliedPromoCode.discountType === "amount" && appliedPromoCode.discountAmount) {
+      return Math.min(appliedPromoCode.discountAmount, auditPackage.price);
+    }
+    return 0;
+  };
+
+  const discount = calculateDiscount();
+  const finalAmount = Math.max(0, (auditPackage?.price || 0) - discount);
+
+  const handlePayment = () => {
+    if (!auditId) return;
+    setPaymentStatus("processing");
+    paymentMutation.mutate({ 
+      auditId, 
+      paymentMethod: selectedMethod,
+      promoCodeId: appliedPromoCode?.id,
+      finalAmount,
+    });
+  };
+
+  const b2bMethods = PAYMENT_METHODS.filter(m => m.isB2B);
+  const personalMethods = PAYMENT_METHODS.filter(m => !m.isB2B);
+
+  if (!auditId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="h-12 w-12 mx-auto text-destructive mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Аудит не найден</h2>
+            <p className="text-muted-foreground mb-4">
+              Пожалуйста, выберите пакет и начните новый аудит
+            </p>
+            <Button onClick={() => navigate("/dashboard")}>
+              Вернуться в личный кабинет
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (paymentStatus === "success") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="h-8 w-8 text-green-500" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Оплата прошла успешно!</h2>
+            <p className="text-muted-foreground mb-4">
+              Аудит вашего сайта запущен. Результаты будут готовы в течение указанного времени.
+            </p>
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Перенаправление...</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background py-8">
+      <div className="max-w-4xl mx-auto px-4">
+        <Button
+          variant="ghost"
+          className="mb-6"
+          onClick={() => navigate("/dashboard")}
+          data-testid="button-back"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Назад
+        </Button>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Выберите способ оплаты
+                </CardTitle>
+                <CardDescription>
+                  Все способы оплаты безопасны и защищены
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex gap-2">
+                  <Button
+                    variant={!isB2B ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setIsB2B(false)}
+                    data-testid="button-personal-payments"
+                  >
+                    Для физлиц
+                  </Button>
+                  <Button
+                    variant={isB2B ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setIsB2B(true)}
+                    data-testid="button-b2b-payments"
+                  >
+                    <Building2 className="h-4 w-4 mr-1" />
+                    Для бизнеса (B2B)
+                  </Button>
+                </div>
+
+                <div className="grid gap-3">
+                  {(isB2B ? b2bMethods : personalMethods).map((method) => {
+                    const Icon = method.icon;
+                    const isSelected = selectedMethod === method.id;
+                    
+                    return (
+                      <div
+                        key={method.id}
+                        className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                          isSelected 
+                            ? "border-primary bg-primary/5 ring-1 ring-primary" 
+                            : "hover-elevate"
+                        }`}
+                        onClick={() => setSelectedMethod(method.id)}
+                        data-testid={`payment-method-${method.id}`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <Icon className="h-10 w-10 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{method.name}</span>
+                              {method.fee === "0%" && (
+                                <Badge variant="secondary" className="bg-green-500/10 text-green-600">
+                                  Без комиссии
+                                </Badge>
+                              )}
+                              {method.isB2B && (
+                                <Badge variant="outline">B2B</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{method.description}</p>
+                            <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                              <span>Комиссия: {method.fee}</span>
+                              <span>Лимит: {method.limit}</span>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 shrink-0 ${
+                            isSelected 
+                              ? "border-primary bg-primary" 
+                              : "border-muted-foreground/30"
+                          }`}>
+                            {isSelected && (
+                              <CheckCircle2 className="h-full w-full text-primary-foreground" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {isB2B && (
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Для юридических лиц:</strong> После оплаты вы получите полный пакет 
+                      закрывающих документов: счёт, акт, счёт-фактура.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Lock className="h-4 w-4" />
+                  <span>Безопасная оплата через</span>
+                  <YookassaLogo className="h-4" />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Ваши платежные данные защищены по стандартам PCI DSS. 
+                  Мы не храним данные ваших карт.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-1">
+            <Card className="sticky top-4">
+              <CardHeader>
+                <CardTitle className="text-lg">Ваш заказ</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {auditLoading ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-6 w-1/2" />
+                  </div>
+                ) : audit ? (
+                  <>
+                    <div>
+                      <p className="font-medium">{auditPackage?.name || "Аудит сайта"}</p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {audit.websiteUrlNormalized}
+                      </p>
+                    </div>
+                    
+                    <Separator />
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">Стоимость пакета</span>
+                        <span>{formatPrice(auditPackage?.price || 0)}</span>
+                      </div>
+                      {selectedMethod === "sbp" && (
+                        <div className="flex justify-between gap-2 text-green-600">
+                          <span>Комиссия СБП</span>
+                          <span>0 ₽</span>
+                        </div>
+                      )}
+                      {appliedPromoCode && discount > 0 && (
+                        <div className="flex justify-between gap-2 text-green-600">
+                          <span className="flex items-center gap-1">
+                            <Tag className="h-3 w-3" />
+                            Скидка ({appliedPromoCode.code})
+                          </span>
+                          <span>-{formatPrice(discount)}</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <Separator />
+                    
+                    {!appliedPromoCode ? (
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Промокод"
+                            value={promoCodeInput}
+                            onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => e.key === "Enter" && handleApplyPromoCode()}
+                            className="flex-1"
+                            data-testid="input-promo-code"
+                          />
+                          <Button
+                            variant="outline"
+                            onClick={handleApplyPromoCode}
+                            disabled={!promoCodeInput.trim() || promoMutation.isPending}
+                            data-testid="button-apply-promo"
+                          >
+                            {promoMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Применить"
+                            )}
+                          </Button>
+                        </div>
+                        {promoError && (
+                          <p className="text-xs text-destructive">{promoError}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 p-2 bg-green-500/10 rounded-md">
+                        <div className="flex items-center gap-2 text-sm text-green-600">
+                          <Tag className="h-4 w-4" />
+                          <span className="font-medium">{appliedPromoCode.code}</span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRemovePromoCode}
+                          data-testid="button-remove-promo"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                    
+                    <Separator />
+                    
+                    <div className="flex justify-between gap-2 font-bold text-lg">
+                      <span>Итого</span>
+                      <span>{formatPrice(finalAmount)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">Загрузка...</p>
+                )}
+              </CardContent>
+              <CardFooter>
+                <Button 
+                  className="w-full" 
+                  size="lg"
+                  onClick={handlePayment}
+                  disabled={paymentStatus === "processing" || !audit}
+                  data-testid="button-pay"
+                >
+                  {paymentStatus === "processing" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Обработка...
+                    </>
+                  ) : (
+                    <>
+                      Оплатить {formatPrice(finalAmount)}
+                    </>
+                  )}
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <div className="mt-4 p-4 bg-muted/30 rounded-lg">
+              <h4 className="font-medium text-sm mb-2">Тестовый режим</h4>
+              <p className="text-xs text-muted-foreground">
+                Платежная система работает в демо-режиме. 
+                Реальные платежи будут доступны после подключения API ЮKassa.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

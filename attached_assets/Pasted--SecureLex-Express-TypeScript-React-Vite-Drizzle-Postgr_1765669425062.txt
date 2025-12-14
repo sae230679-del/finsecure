@@ -1,0 +1,285 @@
+Ты работаешь в проекте SecureLex (Express + TypeScript + React + Vite + Drizzle + Postgres).
+Нужно внести ТОЛЬКО следующие улучшения в бэкенд, не ломая существующую бизнес-логику и UI.
+
+1. Усилить безопасность в server/index.ts
+Файл: server/index.ts
+
+1.1. Убери небезопасный fallback для SESSION_SECRET в продакшене.
+Сделай так:
+
+Вычисли const isProduction = process.env.NODE_ENV === "production"; (уже есть).
+
+Добавь:
+
+ts
+const sessionSecret = process.env.SESSION_SECRET;
+
+if (!sessionSecret) {
+  console.error("[CONFIG] SESSION_SECRET is not set.");
+  if (isProduction) {
+    console.error("[CONFIG] Refusing to start in PRODUCTION without SESSION_SECRET");
+    process.exit(1);
+  }
+}
+В конфиге session() используй:
+
+ts
+secret: sessionSecret || "securelex-dev-secret-key",
+то есть fallback только для DEV.
+
+1.2. Подключи базовые middleware безопасности (после создания app, до registerRoutes):
+
+Установи пакеты, если их нет:
+
+helmet
+
+cors
+
+express-rate-limit
+
+Импорты:
+
+ts
+import helmet from "helmet";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
+Добавь CORS с белым списком:
+
+ts
+const allowedOrigins = [
+  "https://securelex.ru",
+  "https://www.securelex.ru",
+  process.env.REPLIT_URL,
+].filter(Boolean) as string[];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+Добавь helmet:
+
+ts
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // CSP можно включить позже
+  })
+);
+Добавь rate limit на все /api:
+
+ts
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+});
+
+app.use("/api", apiLimiter);
+2. Валидация URL и защита от SSRF в server/routes.ts
+Файл: server/routes.ts
+
+2.1. Рядом с normalizeUrl добавь строгую валидацию URL и запрет локальных/частных IP:
+
+ts
+const PRIVATE_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+];
+
+function isUnsafeHost(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  if (lower === "localhost") return true;
+  const ipv4Match = lower.match(/^(\d{1,3}\.){3}\d{1,3}$/);
+  if (!ipv4Match) return false;
+  return PRIVATE_IP_RANGES.some((re) => re.test(lower));
+}
+
+function validateWebsiteUrl(rawUrl: string) {
+  const normalized = normalizeUrl(rawUrl);
+
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.custom,
+        message: "Некорректный URL",
+        path: ["websiteUrl"],
+      },
+    ]);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.custom,
+        message: "Разрешены только http/https",
+        path: ["websiteUrl"],
+      },
+    ]);
+  }
+
+  if (isUnsafeHost(url.hostname)) {
+    throw new z.ZodError([
+      {
+        code: z.ZodIssueCode.custom,
+        message: "Запрещён локальный/внутренний адрес",
+        path: ["websiteUrl"],
+      },
+    ]);
+  }
+
+  return url.toString();
+}
+2.2. В маршрутах, где принимается URL (как минимум POST /api/public/express-check и POST /api/audits), используй validateWebsiteUrl перед вызовом аудита:
+
+Оберни body в Zod‑схему и замени “сырой” URL на проверенный:
+
+ts
+const body = z
+  .object({
+    websiteUrl: z.string().min(3),
+    email: z.string().email().optional(),
+    // остальные поля, если есть
+  })
+  .parse(req.body);
+
+const safeUrl = validateWebsiteUrl(body.websiteUrl);
+Далее вызывать runExpressAudit(safeUrl) / runAudit(safeUrl, ...) только с проверенным URL.
+
+При ZodError возвращать 400 с issues, как у тебя уже реализовано в других местах.
+
+3. Усиление fetchWebsite в server/audit-engine.ts
+Файл: server/audit-engine.ts
+
+3.1. Вверху файла (или рядом с fetchWebsite) добавь те же PRIVATE_IP_RANGES и хелпер:
+
+ts
+const PRIVATE_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./,
+];
+
+function isPrivateIp(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  const ipv4Match = lower.match(/^(\d{1,3}\.){3}\d{1,3}$/);
+  if (!ipv4Match) return false;
+  return PRIVATE_IP_RANGES.some((re) => re.test(lower));
+}
+3.2. В начале async function fetchWebsite(urlString: string, timeout = 15000):
+
+После const startTime = Date.now(); вставь:
+
+ts
+let parsed: URL;
+try {
+  parsed = new URL(urlString);
+} catch {
+  return {
+    url: urlString,
+    html: "",
+    statusCode: 0,
+    headers: {},
+    responseTime: Date.now() - startTime,
+    error: "Некорректный URL",
+  };
+}
+
+if (parsed.hostname === "localhost" || isPrivateIp(parsed.hostname)) {
+  return {
+    url: urlString,
+    html: "",
+    statusCode: 0,
+    headers: {},
+    responseTime: Date.now() - startTime,
+    error: "Запрещён доступ к локальным/внутренним адресам",
+  };
+}
+Используй parsed дальше вместо повторного new URL.
+
+3.3. Ограничь размер ответа и добавь явный timeout:
+
+В options для запроса оставь твои заголовки, но:
+
+rejectUnauthorized сделай зависимым от NODE_ENV:
+
+ts
+const isProduction = process.env.NODE_ENV === "production";
+const options = {
+  // ...
+  rejectUnauthorized: isProduction ? true : false,
+};
+В обработчике ответа:
+
+ts
+const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+
+const req = lib.request(options, (res) => {
+  let html = "";
+  let received = 0;
+  const headers: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(res.headers)) {
+    if (typeof value === "string") {
+      headers[key.toLowerCase()] = value;
+    } else if (Array.isArray(value)) {
+      headers[key.toLowerCase()] = value.join(", ");
+    }
+  }
+
+  res.on("data", (chunk) => {
+    received += Buffer.byteLength(chunk);
+    if (received > MAX_BYTES) {
+      res.destroy();
+      return;
+    }
+    html += chunk.toString("utf8");
+  });
+
+  res.on("end", () => {
+    const responseTime = Date.now() - startTime;
+    resolve({
+      url: urlString,
+      html,
+      statusCode: res.statusCode || 0,
+      headers,
+      responseTime,
+    });
+  });
+});
+
+req.setTimeout(timeout, () => {
+  req.destroy(new Error("Request timed out"));
+});
+
+req.on("error", (e) => {
+  const responseTime = Date.now() - startTime;
+  resolve({
+    url: urlString,
+    html: "",
+    statusCode: 0,
+    headers: {},
+    responseTime,
+    error: e.message,
+  });
+});
+4. Ничего лишнего не менять
+Не менять публичный API (пути, форматы ответов) и фронтенд.
+
+Не удалять существующую бизнес‑логику аудита и генерации PDF.
+
+Все правки сделать максимально локально, как описано выше.
+
+В конце:
+
+Выведи DIFF или краткий список изменённых файлов и ключевых изменений.
+
+Убедись, что npm run dev и npm run build отрабатывают без ошибок TypeScript.

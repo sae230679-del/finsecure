@@ -1,0 +1,466 @@
+import { useState, useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
+import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Shield, Loader2, Mail, User, Phone, KeyRound, ArrowLeft } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Link } from "wouter";
+
+type AuthMode = "login" | "register";
+type LoginStep = "credentials" | "otp";
+
+export default function AuthPage() {
+  const [mode, setMode] = useState<AuthMode>("login");
+  const [loginStep, setLoginStep] = useState<LoginStep>("credentials");
+  const [, navigate] = useLocation();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
+  
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      navigate("/dashboard");
+    }
+  }, [authLoading, isAuthenticated, navigate]);
+
+  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [otpData, setOtpData] = useState({ userId: 0, code: "" });
+  const [registerData, setRegisterData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
+    pdnConsent: false,
+    marketingConsent: false,
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: async (data: { email: string; password: string }) => {
+      const response = await apiRequest("POST", "/api/auth/login", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.requireOtp) {
+        setOtpData({ userId: data.userId, code: "" });
+        setLoginStep("otp");
+        toast({
+          title: "Код подтверждения отправлен",
+          description: "Проверьте ваш email",
+        });
+      } else {
+        login(data.user);
+        toast({
+          title: "Добро пожаловать!",
+          description: "Вы успешно вошли в систему.",
+        });
+        navigate("/dashboard");
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка входа",
+        description: error.message || "Неверный email или пароль.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const verifyOtpMutation = useMutation({
+    mutationFn: async (data: { userId: number; code: string }) => {
+      const response = await apiRequest("POST", "/api/auth/verify-otp", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      login(data.user);
+      toast({
+        title: "Добро пожаловать!",
+        description: "Вы успешно вошли в систему.",
+      });
+      navigate("/dashboard");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка подтверждения",
+        description: error.message || "Неверный или истекший код.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: async (data: { name: string; email: string; phone?: string; password: string; pdnConsent: boolean; marketingConsent: boolean }) => {
+      const response = await apiRequest("POST", "/api/auth/register", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      login(data.user);
+      toast({
+        title: "Регистрация успешна!",
+        description: "Ваш аккаунт создан.",
+      });
+      navigate("/dashboard");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка регистрации",
+        description: error.message || "Не удалось создать аккаунт.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    loginMutation.mutate(loginData);
+  };
+
+  const handleOtpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    verifyOtpMutation.mutate(otpData);
+  };
+
+  const handleBackToCredentials = () => {
+    setLoginStep("credentials");
+    setOtpData({ userId: 0, code: "" });
+  };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    registerMutation.mutate(registerData);
+  };
+
+  const isLoading = loginMutation.isPending || registerMutation.isPending || verifyOtpMutation.isPending;
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Shield className="h-10 w-10 text-primary" />
+            <span className="text-3xl font-bold">SecureLex.ru</span>
+          </div>
+          <p className="text-muted-foreground">
+            Проверка сайтов на соответствие законодательству
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {loginStep === "otp" 
+                ? "Подтверждение входа" 
+                : mode === "login" 
+                  ? "Вход в систему" 
+                  : "Регистрация"}
+            </CardTitle>
+            <CardDescription>
+              {loginStep === "otp"
+                ? "Введите код из письма"
+                : mode === "login"
+                  ? "Введите ваши данные для входа"
+                  : "Создайте аккаунт для начала работы"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loginStep === "otp" ? (
+              <form onSubmit={handleOtpSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="otp-code">Код подтверждения</Label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="otp-code"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="123456"
+                      value={otpData.code}
+                      onChange={(e) => setOtpData({ ...otpData, code: e.target.value.replace(/\D/g, "") })}
+                      className="pl-10 text-center text-2xl tracking-widest"
+                      disabled={isLoading}
+                      data-testid="input-otp-code"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Код отправлен на {loginData.email}
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading || otpData.code.length !== 6}
+                  data-testid="button-verify-otp"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Проверка...
+                    </>
+                  ) : (
+                    "Подтвердить"
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={handleBackToCredentials}
+                  data-testid="button-back-to-login"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Назад к входу
+                </Button>
+              </form>
+            ) : mode === "login" ? (
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="login-email"
+                      type="email"
+                      placeholder="ivan@mail.ru"
+                      value={loginData.email}
+                      onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
+                      className="pl-10"
+                      disabled={isLoading}
+                      data-testid="input-login-email"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="login-password">Пароль</Label>
+                  <PasswordInput
+                    id="login-password"
+                    placeholder="••••••••"
+                    value={loginData.password}
+                    onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                    showLeftIcon
+                    disabled={isLoading}
+                    data-testid="input-login-password"
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading}
+                  data-testid="button-login"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Вход...
+                    </>
+                  ) : (
+                    "Войти"
+                  )}
+                </Button>
+
+                <div className="text-center">
+                  <a
+                    href="/forgot-password"
+                    className="text-sm text-primary hover:underline"
+                    data-testid="link-forgot-password"
+                  >
+                    Забыли пароль?
+                  </a>
+                </div>
+
+                {/* ФЗ-152: Уведомление о принятии условий при входе */}
+                <p className="text-xs text-muted-foreground text-center mt-4">
+                  Входя в систему, вы принимаете условия{" "}
+                  <Link href="/user-agreement" className="text-primary hover:underline">
+                    Пользовательского соглашения
+                  </Link>{" "}
+                  и{" "}
+                  <Link href="/privacy-policy" className="text-primary hover:underline">
+                    Политики конфиденциальности
+                  </Link>.
+                </p>
+              </form>
+            ) : (
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="register-name">Ваше имя</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="register-name"
+                      type="text"
+                      placeholder="Иван Петров"
+                      value={registerData.name}
+                      onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
+                      className="pl-10"
+                      disabled={isLoading}
+                      data-testid="input-register-name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="register-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="register-email"
+                      type="email"
+                      placeholder="ivan@mail.ru"
+                      value={registerData.email}
+                      onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                      className="pl-10"
+                      disabled={isLoading}
+                      data-testid="input-register-email"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="register-phone">Телефон (опционально)</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="register-phone"
+                      type="tel"
+                      placeholder="+7 (999) 999-99-99"
+                      value={registerData.phone}
+                      onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
+                      className="pl-10"
+                      disabled={isLoading}
+                      data-testid="input-register-phone"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="register-password">Пароль</Label>
+                  <PasswordInput
+                    id="register-password"
+                    placeholder="Минимум 6 символов"
+                    value={registerData.password}
+                    onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                    showLeftIcon
+                    disabled={isLoading}
+                    data-testid="input-register-password"
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                {/* ФЗ-152: Чекбоксы согласий при регистрации */}
+                <div className="space-y-3 pt-2 border-t">
+                  {/* Обязательное согласие на обработку ПДн */}
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="pdn-consent"
+                      checked={registerData.pdnConsent}
+                      onCheckedChange={(checked) => 
+                        setRegisterData({ ...registerData, pdnConsent: checked === true })
+                      }
+                      disabled={isLoading}
+                      data-testid="checkbox-pdn-consent"
+                    />
+                    <label
+                      htmlFor="pdn-consent"
+                      className="text-sm leading-tight cursor-pointer"
+                    >
+                      Я даю согласие на обработку моих персональных данных и подтверждаю, что ознакомлен(а) с{" "}
+                      <Link href="/privacy-policy" className="text-primary hover:underline">
+                        Политикой конфиденциальности
+                      </Link>{" "}
+                      <span className="text-destructive">*</span>
+                    </label>
+                  </div>
+                  
+                  {/* Необязательное согласие на маркетинговые рассылки */}
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="marketing-consent"
+                      checked={registerData.marketingConsent}
+                      onCheckedChange={(checked) => 
+                        setRegisterData({ ...registerData, marketingConsent: checked === true })
+                      }
+                      disabled={isLoading}
+                      data-testid="checkbox-marketing-consent"
+                    />
+                    <label
+                      htmlFor="marketing-consent"
+                      className="text-sm text-muted-foreground leading-tight cursor-pointer"
+                    >
+                      Согласен получать новости и предложения сервиса SecureLex на указанный e-mail
+                    </label>
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading || !registerData.pdnConsent}
+                  data-testid="button-register"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Регистрация...
+                    </>
+                  ) : (
+                    "Создать аккаунт"
+                  )}
+                </Button>
+              </form>
+            )}
+
+            {loginStep !== "otp" && (
+              <div className="mt-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => setMode(mode === "login" ? "register" : "login")}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-toggle-auth-mode"
+                >
+                  {mode === "login" ? (
+                    <>
+                      Нет аккаунта? <span className="text-primary font-medium">Зарегистрируйтесь</span>
+                    </>
+                  ) : (
+                    <>
+                      Уже есть аккаунт? <span className="text-primary font-medium">Войдите</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          Продолжая, вы соглашаетесь с{" "}
+          <Link href="/user-agreement" className="text-primary hover:underline">
+            условиями использования
+          </Link>{" "}
+          и{" "}
+          <Link href="/privacy-policy" className="text-primary hover:underline">
+            политикой конфиденциальности
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

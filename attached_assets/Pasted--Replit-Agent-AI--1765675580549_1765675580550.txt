@@ -1,0 +1,116 @@
+Ниже промт, который можно сразу отдать Replit Agent, чтобы появился селектор режима AI‑аудита в админке.
+
+ПРОМТ ДЛЯ REPLIT AGENT: ПЕРЕКЛЮЧАТЕЛЬ AI-МОДА В АДМИНКЕ
+Нужно добавить в проект SecureLex админскую настройку выбора режима AI‑аудита, который уже хранится в таблице system_settings с ключом ai_mode и используется в audit‑логике.
+
+Цель:
+
+Сделать простой UI‑селектор в админке,
+
+и соответствующие admin‑эндпоинты на backend.
+
+1. Backend: admin API для ai_mode
+1.1. В server/storage.ts создай/дополни функции работы с настройкой ai_mode:
+
+ts
+import type { AuditAiMode } from "./audit-engine";
+
+export async function getAiMode(): Promise<AuditAiMode> {
+  // Прочитать значение из таблицы system_settings (key = "ai_mode").
+  // Если записи нет или значение некорректно, вернуть "gigachat_only" по умолчанию.
+}
+
+export async function setAiMode(mode: AuditAiMode): Promise<void> {
+  // Обновить или вставить запись в system_settings с key = "ai_mode" и указанным mode.
+  // Использовать upsert (INSERT ... ON CONFLICT / эквивалент в Drizzle).
+}
+Используй уже существующие паттерны доступа к system_settings, которые ты применяешь для чтения ai_mode в аудит‑логике.
+
+1.2. В server/routes.ts добавь два admin‑эндпоинта (в блоке, где уже есть админ‑маршруты).
+
+Используй как минимум requireAdmin, лучше requireSuperAdmin:
+
+ts
+import { getAiMode, setAiMode } from "./storage";
+import type { AuditAiMode } from "./audit-engine";
+
+app.get("/api/admin/settings/ai-mode", requireSuperAdmin, async (_req, res, next) => {
+  try {
+    const mode = await getAiMode();
+    res.json({ aiMode: mode });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put("/api/admin/settings/ai-mode", requireSuperAdmin, async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        aiMode: z.enum(["gigachat_only", "openai_only", "hybrid", "none"]),
+      })
+      .parse(req.body);
+
+    await setAiMode(body.aiMode as AuditAiMode);
+    res.json({ aiMode: body.aiMode });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation error", issues: err.issues });
+    }
+    next(err);
+  }
+});
+1.3. Если где‑то ещё в routes.ts есть локальная функция getCurrentAiMode, обнови её, чтобы она использовала getAiMode из storage (и/или убери дублирование, если логика уже централизована).
+
+2. Frontend: селектор режима AI в админке
+2.1. Найди страницу/раздел админских настроек (например, client/src/pages/admin/settings.tsx или аналог).
+
+Если такой страницы нет — создай простую админ‑страницу, доступную только пользователям с ролью admin/superadmin (ориентируйся на уже существующие проверки прав в клиентском коде).
+
+2.2. Добавь на страницу блок “Режим AI‑аудита” со следующей логикой:
+
+При монтировании:
+
+выполнить запрос GET /api/admin/settings/ai-mode;
+
+сохранить полученное значение aiMode в состоянии компонента.
+
+Отобразить выпадающий список (select) с такими вариантами:
+
+gigachat_only → подпись: “Только GigaChat (аудит по 152‑ФЗ)”
+
+openai_only → “Только OpenAI (расширенный анализ)”
+
+hybrid → “Гибрид: OpenAI + GigaChat (fallback)”
+
+none → “Без AI‑анализа (только автоматические проверки)”
+
+При изменении значения:
+
+отправить PUT /api/admin/settings/ai-mode с { aiMode: <новое значение> };
+
+после успешного ответа обновить локальное состояние и показать короткий toast/уведомление “Режим AI‑аудита обновлён”.
+
+2.3. UI‑требования:
+
+Использовать существующие UI‑компоненты (select, card/section, кнопки), принятые в проекте.
+
+Визуально сделать блок компактным: заголовок + select + небольшое описание под ним (1–2 строки, без длинной юр‑формулировки).
+
+Пример текстов описания (адаптируй):
+
+Под заголовком: “Определяет, какой AI‑провайдер используется при формировании аналитической части отчёта.”
+
+3. Общие требования
+Не менять существующие public API аудита (/api/audits и т.п.), только добавить admin‑маршруты.
+
+Убедись, что к admin‑эндпоинтам нет доступа без авторизации и нужной роли.
+
+Не добавлять новых внешних библиотек.
+
+В конце:
+
+перечисли изменённые файлы (backend + frontend);
+
+опиши, как супер‑админ может попасть на страницу настроек и переключить режим AI‑аудита.
+

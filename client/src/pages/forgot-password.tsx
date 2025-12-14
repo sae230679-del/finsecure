@@ -1,0 +1,151 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Shield, Loader2, Mail, ArrowLeft, CheckCircle } from "lucide-react";
+
+export default function ForgotPasswordPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const forgotPasswordMutation = useMutation({
+    mutationFn: async (data: { email: string }) => {
+      const response = await apiRequest("POST", "/api/auth/forgot-password", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      setSubmitted(true);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Ошибка",
+        description: error.message || "Не удалось отправить письмо.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    forgotPasswordMutation.mutate({ email });
+  };
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Shield className="h-10 w-10 text-primary" />
+              <span className="text-3xl font-bold">SecureLex.ru</span>
+            </div>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center space-y-4">
+                <CheckCircle className="h-16 w-16 text-green-500 mx-auto" />
+                <h2 className="text-xl font-semibold">Проверьте почту</h2>
+                <p className="text-muted-foreground">
+                  Если аккаунт с email <strong>{email}</strong> существует, мы отправили письмо с инструкциями по сбросу пароля.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Не получили письмо? Проверьте папку "Спам" или попробуйте снова через несколько минут.
+                </p>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => navigate("/auth")}
+                  data-testid="button-back-to-login"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Вернуться к входу
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Shield className="h-10 w-10 text-primary" />
+            <span className="text-3xl font-bold">SecureLex.ru</span>
+          </div>
+          <p className="text-muted-foreground">
+            Восстановление пароля
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Забыли пароль?</CardTitle>
+            <CardDescription>
+              Введите ваш email, и мы отправим ссылку для сброса пароля
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="ivan@mail.ru"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-10"
+                    disabled={forgotPasswordMutation.isPending}
+                    data-testid="input-forgot-email"
+                    required
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={forgotPasswordMutation.isPending}
+                data-testid="button-send-reset"
+              >
+                {forgotPasswordMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Отправка...
+                  </>
+                ) : (
+                  "Отправить ссылку"
+                )}
+              </Button>
+
+              <div className="text-center">
+                <a
+                  href="/auth"
+                  className="text-sm text-primary hover:underline"
+                  data-testid="link-back-to-login"
+                >
+                  <ArrowLeft className="h-3 w-3 inline mr-1" />
+                  Вернуться к входу
+                </a>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

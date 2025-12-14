@@ -1,0 +1,501 @@
+import { useState } from "react";
+import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ColorModeToggle } from "@/components/color-mode-toggle";
+import { ExpressCheck } from "@/components/express-check";
+import { Footer } from "@/components/footer";
+import { FULL_AUDIT_PACKAGES, EXPRESS_PACKAGE, PACKAGES_DATA, formatPrice, formatDuration, type PackageType } from "@/lib/packages-data";
+import { useAuth } from "@/lib/auth-context";
+import {
+  Shield,
+  CheckCircle2,
+  FileText,
+  Clock,
+  Users,
+  Lock,
+  Globe,
+  ArrowRight,
+  Star,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  FileCode,
+  Building2,
+  ShoppingCart,
+  Cloud,
+  UsersRound,
+  Store,
+  Newspaper,
+  Stethoscope,
+  Baby,
+  HelpCircle,
+} from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+
+type PublicSettings = {
+  siteName: string;
+  requisites: {
+    legalType: "self_employed" | "ip" | "ooo";
+    companyName: string;
+    inn: string;
+    kpp?: string;
+    ogrn?: string;
+    ogrnip?: string;
+    bankAccount: string;
+    bankName: string;
+    bik: string;
+    corrAccount: string;
+    legalAddress: string;
+  } | null;
+  contacts: {
+    email: string;
+    phone: string;
+    telegram: string;
+    whatsapp: string;
+    vk: string;
+    maxMessenger: string;
+  } | null;
+};
+
+export default function LandingPage() {
+  const { isAuthenticated } = useAuth();
+  const [showAllPackages, setShowAllPackages] = useState(false);
+  
+  const { data: publicSettings } = useQuery<PublicSettings>({
+    queryKey: ["/api/settings/public"],
+  });
+
+  const contacts = publicSettings?.contacts;
+  const requisites = publicSettings?.requisites;
+
+  const getLegalTypeName = (type: string) => {
+    switch (type) {
+      case "self_employed": return "Самозанятый";
+      case "ip": return "ИП";
+      case "ooo": return "ООО";
+      default: return "";
+    }
+  };
+
+  const features = [
+    {
+      icon: Shield,
+      title: "ФЗ-149 ФЗ-152 Проверка",
+      description: "Полная проверка на соответствие закону о персональных данных",
+    },
+    {
+      icon: Globe,
+      title: "Российское законодательство",
+      description: "Полное соответствие требованиям законодательства РФ",
+    },
+    {
+      icon: FileText,
+      title: "Детальные отчеты",
+      description: "Подробные рекомендации по исправлению нарушений",
+    },
+    {
+      icon: Clock,
+      title: "Быстрая проверка",
+      description: "Результаты за 15-60 минут в зависимости от типа сайта",
+    },
+    {
+      icon: Lock,
+      title: "SSL/HTTPS анализ",
+      description: "Проверка безопасности соединения и сертификатов",
+    },
+    {
+      icon: Users,
+      title: "Экспертная поддержка",
+      description: "Консультации юристов по вопросам compliance",
+    },
+  ];
+
+  const faq = [
+    {
+      q: "Какие законы проверяются?",
+      a: "Мы проверяем соответствие ФЗ-152 (защита персональных данных), ФЗ-149 (информация в интернете) и другим требованиям законодательства РФ.",
+    },
+    {
+      q: "Сколько времени занимает проверка?",
+      a: "В зависимости от типа сайта и выбранного пакета, проверка занимает от 15 минут до 4 часов для Premium Audit.",
+    },
+    {
+      q: "Что включено в отчет?",
+      a: "Краткий отчет показывает основные результаты. Полный отчет (900₽) включает детальный анализ, скриншоты, код для исправления и пошаговые инструкции.",
+    },
+    {
+      q: "Как оплатить проверку?",
+      a: "Мы принимаем оплату через ЮKassa: СБП (0% комиссия), SberPay, T-Pay, Mir Pay, ЮMoney и карты Мир. Для юридических лиц доступен СберБизнес.",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="flex items-center justify-between gap-4 h-16">
+            <Link href="/" className="flex items-center gap-2">
+              <Shield className="h-8 w-8 animate-traffic-light-text" />
+              <span className="text-xl font-bold">SecureLex.ru</span>
+            </Link>
+
+            <div className="flex items-center gap-1 sm:gap-2">
+              <ColorModeToggle />
+              {isAuthenticated ? (
+                <Button size="sm" asChild data-testid="link-dashboard" className="sm:size-default">
+                  <Link href="/dashboard">
+                    <span className="hidden sm:inline">Личный кабинет</span>
+                    <span className="sm:hidden">Кабинет</span>
+                  </Link>
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" asChild data-testid="link-login" className="hidden sm:inline-flex">
+                    <Link href="/auth">Войти</Link>
+                  </Button>
+                  <Button size="sm" asChild data-testid="link-register">
+                    <Link href="/auth">Начать</Link>
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section className="py-8 sm:py-16 lg:py-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-start">
+            <div className="space-y-6">
+              <Badge variant="secondary" className="gap-1">
+                <Zap className="h-3 w-3" />
+                Автоматическая проверка
+              </Badge>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
+                Проверьте ваш сайт на{" "}
+                <span className="text-primary">соответствие законам</span>
+              </h1>
+              <p className="text-lg text-muted-foreground">
+                SecureLex.ru автоматически проверяет сайты на соответствие ФЗ-149, 
+                ФЗ-152 и другим требованиям законодательства РФ. Получите детальный отчет за 15-60 минут.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button size="lg" variant="outline" asChild>
+                  <Link href="/criteria">Критерии проверки</Link>
+                </Button>
+                <Button size="lg" asChild>
+                  <Link href="#check">
+                    Проверить сайт
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+              <div className="flex items-center gap-6 pt-4 text-sm text-muted-foreground flex-wrap">
+                <div className="flex items-center gap-1">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span>1000+ проверок</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Star className="h-4 w-4 text-yellow-500" />
+                  <span>4.9 рейтинг</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="h-4 w-4" />
+                  <span>от 15 минут</span>
+                </div>
+              </div>
+            </div>
+
+            <ExpressCheck />
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 bg-muted/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Почему SecureLex.ru?</h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Мы предлагаем полную автоматизированную проверку вашего сайта на соответствие 
+              российскому и международному законодательству
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {features.map((feature, index) => (
+              <Card key={index} className="hover-elevate">
+                <CardContent className="pt-6">
+                  <feature.icon className="h-10 w-10 text-primary mb-4" />
+                  <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
+                  <p className="text-muted-foreground text-sm">{feature.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="mt-8 text-center">
+            <Button variant="outline" asChild data-testid="button-criteria-features">
+              <Link href="/criteria">
+                Критерии проверки
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 max-w-4xl mx-auto">
+              Закажите аудит сайта на соответствие ФЗ-152, ФЗ-149 — выявление нарушений, подготовка документов
+            </h2>
+            <p className="text-lg text-muted-foreground mb-2">
+              (политика, согласия, инструкции, cookies-баннер)
+            </p>
+            <p className="text-lg font-semibold">
+              Защита от штрафов и блокировки!
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="pricing" className="py-12 sm:py-16 bg-muted/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="text-center mb-8 sm:mb-12">
+            <h2 className="text-2xl sm:text-3xl font-bold mb-3 sm:mb-4">Два сервиса на выбор</h2>
+            <p className="text-sm sm:text-base text-muted-foreground max-w-2xl mx-auto">
+              Быстрая проверка для понимания ситуации или полный аудит с готовыми документами
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-12 items-stretch">
+            <div className="relative flex flex-col">
+              <Badge variant="secondary" className="gap-2 text-sm py-1.5 px-3 shadow-lg absolute -top-4 left-1/2 -translate-x-1/2 lg:left-4 lg:translate-x-0 z-10">
+                <Zap className="h-4 w-4" />
+                <span className="lg:hidden">Сервис 1: Быстрая проверка</span>
+                <span className="hidden lg:inline">Сервис 1</span>
+              </Badge>
+              <Card className="border-2 border-primary/20 flex-1 flex flex-col pt-6">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-xl sm:text-2xl">Экспресс-проверка</CardTitle>
+                  <CardDescription className="text-sm">Быстро узнайте состояние вашего сайта за 2 минуты</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col space-y-4">
+                  <div className="space-y-3 flex-1">
+                    <div className="p-3 sm:p-4 rounded-md bg-green-500/10 border border-green-500/20">
+                      <div className="flex items-center justify-between gap-2 sm:gap-4 mb-2">
+                        <span className="font-semibold text-sm sm:text-base text-green-700 dark:text-green-400">Краткий отчёт</span>
+                        <Badge variant="outline" className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30 text-xs">Бесплатно</Badge>
+                      </div>
+                      <ul className="space-y-1 text-xs sm:text-sm text-muted-foreground">
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                          7 критических проверок
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                          Score 0-100, расчёт штрафов
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                          Результат за 2 минуты
+                        </li>
+                      </ul>
+                    </div>
+                    <div className="p-3 sm:p-4 rounded-md bg-muted">
+                      <div className="flex items-center justify-between gap-2 sm:gap-4 mb-2">
+                        <span className="font-semibold text-sm sm:text-base">Полный PDF отчёт</span>
+                        <span className="text-xl sm:text-2xl font-bold">{formatPrice(EXPRESS_PACKAGE.price)}</span>
+                      </div>
+                      <ul className="space-y-1 text-xs sm:text-sm text-muted-foreground">
+                        {EXPRESS_PACKAGE.features.map((f, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="mt-auto space-y-4">
+                    <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-xs sm:text-sm text-amber-700 dark:text-amber-400 text-center font-medium">
+                        Без готовых документов. Только анализ нарушений.
+                      </p>
+                    </div>
+                    <Button className="w-full" size="lg" asChild>
+                      <a href="#check">
+                        Проверить бесплатно
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="relative flex flex-col">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 lg:left-4 lg:translate-x-0 z-10 flex items-center gap-2">
+                <Badge className="gap-2 text-sm py-1.5 px-3 shadow-lg">
+                  <Star className="h-4 w-4" />
+                  <span className="lg:hidden">Сервис 2: Полный аудит</span>
+                  <span className="hidden lg:inline">Сервис 2</span>
+                </Badge>
+                <span className="px-2 py-1 text-xs font-bold rounded-full text-white animate-traffic-light shadow-lg">
+                  ТОП
+                </span>
+              </div>
+              <Card className="border-2 border-primary flex-1 flex flex-col pt-6">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-xl sm:text-2xl">Полный аудит + документы</CardTitle>
+                  <CardDescription className="text-sm">Приведите сайт в соответствие закону с готовыми документами</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col space-y-4">
+                  <div className="space-y-3 flex-1">
+                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>63 критерия</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>10-15 документов</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>Политика ПДн</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>Cookie-баннер</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>Согласия на ОПД</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
+                        <span>Консультация</span>
+                      </div>
+                    </div>
+                    <div className="p-3 sm:p-4 rounded-md bg-primary/5 border border-primary/20">
+                      <div className="text-center">
+                        <span className="text-xs sm:text-sm text-muted-foreground block mb-1">Цена зависит от типа сайта</span>
+                        <div className="text-xl sm:text-2xl font-bold">от {formatPrice(3900)} до {formatPrice(39900)}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-auto space-y-4">
+                    <div className="p-3 rounded-md bg-green-500/10 border border-green-500/20">
+                      <p className="text-xs sm:text-sm text-green-700 dark:text-green-400 text-center font-medium">
+                        Готовые документы для внедрения на сайт!
+                      </p>
+                    </div>
+                    <Button className="w-full" size="lg" variant="default" asChild>
+                      <a href="#packages">
+                        Выбрать тип сайта
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          <div id="packages" className="pt-8">
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold mb-2">Полный аудит по типу сайта</h3>
+              <p className="text-muted-foreground">Выберите тип вашего сайта для точной проверки</p>
+            </div>
+            
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {(showAllPackages ? Object.entries(FULL_AUDIT_PACKAGES) : Object.entries(FULL_AUDIT_PACKAGES).slice(0, 8)).map(([key, pkg]) => {
+                const siteTypeInfo: Record<string, { icon: typeof FileCode; subtitle: string }> = {
+                  landing: { icon: FileCode, subtitle: "до 3 страниц" },
+                  biometry: { icon: Users, subtitle: "фото сотрудников" },
+                  corporate: { icon: Building2, subtitle: "6-50 страниц" },
+                  ecommerce: { icon: ShoppingCart, subtitle: "с оплатой" },
+                  saas: { icon: Cloud, subtitle: "онлайн-сервисы" },
+                  portal: { icon: UsersRound, subtitle: "с регистрацией" },
+                  marketplace: { icon: Store, subtitle: "с продавцами" },
+                  media: { icon: Newspaper, subtitle: "контент/блог" },
+                  medical: { icon: Stethoscope, subtitle: "клиники" },
+                  children: { icon: Baby, subtitle: "для детей" },
+                  forum: { icon: UsersRound, subtitle: "форум/соцсеть" },
+                  premium: { icon: Star, subtitle: ">50 страниц" },
+                };
+                const info = siteTypeInfo[key] || { icon: FileCode, subtitle: "" };
+                const IconComponent = info.icon;
+                
+                return (
+                  <Card key={key} className="transition-all duration-200 hover:ring-2 hover:ring-primary group">
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <IconComponent className="h-5 w-5 text-primary flex-shrink-0" />
+                        <div>
+                          <div className="font-semibold text-sm">{pkg.name}</div>
+                          <div className="text-xs text-muted-foreground">{info.subtitle}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xl font-bold">{formatPrice(pkg.price)}</span>
+                        <span className="text-xs text-muted-foreground">{pkg.criteriaCount} критериев</span>
+                      </div>
+                      <Button className="w-full" size="sm" variant="outline" asChild>
+                        <Link href={isAuthenticated ? "/dashboard" : "/auth"}>
+                          Выбрать
+                        </Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+            <div className="text-center mt-6">
+              <Button 
+                variant="ghost" 
+                onClick={() => setShowAllPackages(!showAllPackages)}
+                data-testid="button-toggle-packages"
+              >
+                {showAllPackages ? "Скрыть" : "Смотреть все типы сайтов"}
+                {showAllPackages ? (
+                  <ChevronUp className="ml-1 h-4 w-4" />
+                ) : (
+                  <ChevronDown className="ml-1 h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16">
+        <div className="max-w-3xl mx-auto px-4 sm:px-8 lg:px-12">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold mb-4">Часто задаваемые вопросы</h2>
+          </div>
+          <Accordion type="single" collapsible className="w-full">
+            {faq.map((item, index) => (
+              <AccordionItem key={index} value={`item-${index}`}>
+                <AccordionTrigger className="text-left">{item.q}</AccordionTrigger>
+                <AccordionContent className="text-muted-foreground">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </section>
+
+      <Footer />
+    </div>
+  );
+}

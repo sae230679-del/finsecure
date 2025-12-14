@@ -1,0 +1,892 @@
+Create a full-stack website compliance checking platform named SecureLex.ru, consisting of:
+
+✅ Frontend (React 18+)
+
+✅ Backend API (Node.js + Express)
+
+✅ PostgreSQL Database
+
+✅ 10 design themes
+
+✅ 3 dashboards (User, Admin, SuperAdmin)
+
+✅ Payment system (Yandex.Kassa)
+
+✅ Dropdown with 9 service packages
+
+🎯 PHASE 1: SETUP
+Task 1.1: Install Dependencies
+bash
+# Frontend
+npm install react@18 react-router-dom@6 redux @reduxjs/toolkit tailwindcss axios vite
+
+# Backend
+npm install express pg redis jsonwebtoken bcrypt nodemailer axios dotenv cors
+
+# Database (use PostgreSQL locally)
+Task 1.2: Project Structure
+text
+securelex-ru/
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── DropdownPackageSelector.jsx
+│   │   │   ├── ProgressBar.jsx
+│   │   │   ├── ReportViewer.jsx
+│   │   │   └── URLInput.jsx
+│   │   ├── pages/
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── AdminDashboard.jsx
+│   │   │   ├── SuperAdminDashboard.jsx
+│   │   │   └── Auth.jsx
+│   │   ├── styles/
+│   │   │   ├── themes.css (10 themes)
+│   │   │   └── main.css
+│   │   └── App.jsx
+│   └── vite.config.js
+│
+├── backend/
+│   ├── routes/
+│   │   ├── auth.js
+│   │   ├── packages.js
+│   │   ├── audits.js
+│   │   ├── payments.js
+│   │   ├── reports.js
+│   │   ├── admin.js
+│   │   └── superadmin.js
+│   ├── middleware/
+│   │   ├── auth.js
+│   │   └── roleCheck.js
+│   ├── utils/
+│   │   ├── urlNormalizer.js
+│   │   ├── emailService.js
+│   │   └── auditEngine.js
+│   ├── db/
+│   │   └── schema.sql (15 tables)
+│   ├── server.js
+│   └── .env
+│
+└── docs/
+    └── API.md
+Task 1.3: .env Configuration
+text
+# Backend
+PORT=5000
+DATABASE_URL=postgresql://user:password@localhost:5432/securelex
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=your-secret-key-here
+NODE_ENV=development
+
+# Yandex.Kassa
+YANDEX_SHOP_ID=123456
+YANDEX_API_KEY=test_xxxxx
+
+# Email
+EMAIL_SERVICE=yandex
+EMAIL_USER=support@securelex.ru
+EMAIL_PASSWORD=your-password
+
+# Frontend
+VITE_API_URL=http://localhost:5000
+🗄️ PHASE 2: DATABASE
+Task 2.1: Create 15 Tables
+Create: schema.sql with tables:
+
+sql
+-- 1. users
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  phone VARCHAR(20),
+  company_name VARCHAR(255),
+  inn VARCHAR(12),
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(50) DEFAULT 'user',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 2. audit_packages
+CREATE TABLE audit_packages (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  type VARCHAR(50) UNIQUE NOT NULL,
+  price INTEGER NOT NULL,
+  criteria_count INTEGER NOT NULL,
+  duration_min INTEGER NOT NULL,
+  duration_max INTEGER NOT NULL,
+  description TEXT
+);
+
+-- 3. audits
+CREATE TABLE audits (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  package_id INTEGER REFERENCES audit_packages(id),
+  website_url_normalized VARCHAR(255) NOT NULL,
+  website_url_original VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP
+);
+
+-- 4. audit_results
+CREATE TABLE audit_results (
+  id SERIAL PRIMARY KEY,
+  audit_id INTEGER REFERENCES audits(id),
+  criteria_json JSONB NOT NULL,
+  score_percent INTEGER,
+  severity VARCHAR(10)
+);
+
+-- 5. payments
+CREATE TABLE payments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  audit_id INTEGER REFERENCES audits(id),
+  amount INTEGER NOT NULL,
+  currency VARCHAR(3) DEFAULT 'RUB',
+  yandex_payment_id VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 6. reports
+CREATE TABLE reports (
+  id SERIAL PRIMARY KEY,
+  audit_id INTEGER REFERENCES audits(id),
+  type VARCHAR(50),
+  content_html TEXT,
+  pdf_url VARCHAR(255),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 7. users_roles
+CREATE TABLE users_roles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  role VARCHAR(50)
+);
+
+-- 8. emails_log
+CREATE TABLE emails_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  email_type VARCHAR(50),
+  status VARCHAR(50),
+  sent_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 9. contracts
+CREATE TABLE contracts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  type VARCHAR(50),
+  signed_at TIMESTAMP
+);
+
+-- 10. promo_codes
+CREATE TABLE promo_codes (
+  id SERIAL PRIMARY KEY,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  discount_percent INTEGER,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 11. referral_earnings
+CREATE TABLE referral_earnings (
+  id SERIAL PRIMARY KEY,
+  referrer_id INTEGER REFERENCES users(id),
+  referee_id INTEGER REFERENCES users(id),
+  amount INTEGER,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 12. design_themes
+CREATE TABLE design_themes (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  css_content TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT FALSE,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 13. audit_logs
+CREATE TABLE audit_logs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  action VARCHAR(255),
+  resource_type VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 14. admins
+CREATE TABLE admins (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  ip_whitelist TEXT
+);
+
+-- 15. system_settings
+CREATE TABLE system_settings (
+  id SERIAL PRIMARY KEY,
+  key VARCHAR(255) UNIQUE NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- INSERT 9 PACKAGES
+INSERT INTO audit_packages (name, type, price, criteria_count, duration_min, duration_max, description) VALUES
+('Landing', 'landing', 390000, 7, 15, 20, 'Single page website audit'),
+('With Photos', 'with_photos', 390000, 8, 20, 25, 'Website with team photos audit'),
+('Corporate', 'corporate', 490000, 10, 25, 30, 'Corporate website audit'),
+('E-Commerce', 'ecommerce', 790000, 12, 35, 45, 'Online store audit'),
+('SaaS / Service', 'saas', 590000, 9, 30, 40, 'SaaS platform audit'),
+('Portal / Community', 'portal', 690000, 11, 35, 45, 'Portal or community audit'),
+('Marketplace', 'marketplace', 990000, 13, 45, 60, 'Marketplace audit'),
+('Media / Blog', 'media', 490000, 10, 25, 35, 'Media/Blog website audit'),
+('Premium Audit', 'premium', 3990000, 50, 120, 240, 'Full premium audit');
+
+-- INSERT DEFAULT THEMES
+INSERT INTO design_themes (name, css_content, is_active) VALUES
+('Light', ':root { --bg: #FAFAFA; --text: #1F2937; }', true),
+('Dark', ':root { --bg: #111827; --text: #F3F4F6; }', false);
+
+-- SYSTEM SETTINGS
+INSERT INTO system_settings (key, value) VALUES
+('site_name', 'SecureLex.ru'),
+('logo_url', '/logo.png'),
+('support_email', 'support@securelex.ru');
+Task 2.2: Create Database
+bash
+# Connect to PostgreSQL
+psql -U postgres
+
+# Create database
+CREATE DATABASE securelex;
+
+# Connect to database
+\c securelex
+
+# Execute schema.sql
+\i schema.sql
+🎨 PHASE 3: FRONTEND - AUTH
+Task 3.1: Auth Page
+Create: frontend/src/pages/Auth.jsx
+
+Requirements:
+
+✅ Registration form: Name, Phone, Email
+
+✅ Login form: Email, Password
+
+✅ JWT tokens (localStorage)
+
+✅ Redirect after login to Dashboard
+
+✅ Email validation
+
+✅ Tailwind CSS styling
+
+jsx
+// Structure:
+// <RegisterForm />
+// <LoginForm />
+// useNavigate for redirect
+// dispatch(setUser()) to Redux
+Task 3.2: Protected Route
+Create: frontend/src/components/ProtectedRoute.jsx
+
+jsx
+// Check token in localStorage
+// If no token → redirect to Auth
+// If token exists → show component
+// Check role (user, admin, superadmin)
+Task 3.3: URL Input Component
+Create: frontend/src/components/URLInput.jsx
+
+Requirements:
+
+✅ Flexible URL input
+
+✅ Supports: example.com, www.example.com, https://example.com
+
+✅ Frontend validation
+
+✅ onChange callback
+
+✅ Error message for invalid format
+
+📦 PHASE 4: FRONTEND - DROPDOWN PACKAGES
+Task 4.1: Dropdown Component
+Create: frontend/src/components/DropdownPackageSelector.jsx
+
+Requirements:
+
+✅ 9 packages in one select
+
+✅ Default value: "landing"
+
+✅ On selection → update:
+
+Price
+
+Criteria count
+
+Duration
+
+Description
+
+Features list
+
+✅ Tailwind CSS
+
+jsx
+const packages = {
+  landing: {
+    name: 'Landing',
+    price: 3900,
+    criteria_count: 7,
+    duration: '15-20',
+    description: '...',
+    features: [...]
+  },
+  // ... 8 more packages
+}
+
+const [selected, setSelected] = useState('landing');
+const pkg = packages[selected];
+Task 4.2: Audit Form
+Create: frontend/src/components/AuditForm.jsx
+
+Requirements:
+
+✅ URL Input
+
+✅ Dropdown packages
+
+✅ Display: price, criteria, duration
+
+✅ "Start Audit" button
+
+✅ On click → validate → send to backend
+
+✅ Loading state
+
+🔐 PHASE 5: BACKEND - AUTH API
+Task 5.1: Endpoints
+javascript
+// backend/routes/auth.js
+
+POST /auth/register
+{
+  "name": "John",
+  "email": "john@mail.ru",
+  "phone": "+7999..."
+}
+Response: { success, token, user }
+
+POST /auth/login
+{
+  "email": "john@mail.ru",
+  "password": "password123"
+}
+Response: { token, user }
+
+POST /auth/verify-email
+{
+  "token": "email-verification-token"
+}
+Response: { success }
+Task 5.2: Auth Middleware
+Create: backend/middleware/auth.js
+
+javascript
+// verifyToken(token)
+// decode JWT
+// verify validity
+// return user_id if OK
+
+module.exports = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ');
+  if (!token) return res.status(401).json({ error: 'No token' });
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user_id = decoded.id;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+Task 5.3: Password Hashing
+javascript
+// On registration
+const hashedPassword = await bcrypt.hash(password, 10);
+
+// On login
+const isValid = await bcrypt.compare(password, user.password_hash);
+🔍 PHASE 6: BACKEND - PACKAGES & AUDITS
+Task 6.1: Endpoints
+javascript
+GET /api/packages
+Response: [
+  { id: 1, name: 'Landing', price: 3900, ... },
+  // ... 8 more packages
+]
+
+POST /api/audits
+{
+  "website_url": "example.com",
+  "package_type": "landing"
+}
+Response: { audit_id, status: 'pending' }
+
+GET /api/audits/:audit_id
+Response: { id, status, results, score_percent }
+Task 6.2: URL Normalizer
+Create: backend/utils/urlNormalizer.js
+
+javascript
+function normalizeURL(inputURL) {
+  let normalized = inputURL.trim().toLowerCase();
+  
+  // Remove http:// if present
+  if (normalized.startsWith('http://')) {
+    normalized = normalized.replace('http://', 'https://');
+  }
+  
+  // Add https:// if missing
+  if (!normalized.startsWith('https://')) {
+    normalized = 'https://' + normalized;
+  }
+  
+  // Parse and return origin
+  const url = new URL(normalized);
+  return url.origin;
+}
+
+module.exports = normalizeURL;
+Task 6.3: Audit Engine
+Create: backend/utils/auditEngine.js
+
+javascript
+async function runAudit(website_url, package_type) {
+  // 1. Fetch website
+  // 2. Check SSL certificate
+  // 3. Check privacy policy page
+  // 4. Check contact info
+  // 5. Check cookie banner
+  // 6. ... remaining criteria
+  // 7. Return results as JSON
+  
+  const results = {
+    ssl_valid: true,
+    privacy_policy: true,
+    cookie_banner: false,
+    // ... etc
+  };
+  
+  return results;
+}
+💳 PHASE 7: BACKEND - PAYMENTS
+Task 7.1: Yandex.Kassa Integration
+javascript
+POST /api/payments/create
+{
+  "audit_id": 123,
+  "package_id": 1,
+  "amount": 3900
+}
+
+// Response from Yandex - get confirmation_url
+// Redirect user to payment
+// Webhook for payment confirmation
+Task 7.2: Webhook Handling
+javascript
+POST /api/payments/webhook
+// Verify signature from Yandex
+// If payment succeeded → update payments.status = 'succeeded'
+// Start audit
+// Send email to user
+📊 PHASE 8: FRONTEND - USER DASHBOARD
+Task 8.1: Dashboard Structure
+Create: frontend/src/pages/Dashboard.jsx
+
+Requirements:
+
+✅ Header with SecureLex.ru logo
+
+✅ Sidebar menu
+
+✅ Main content area
+
+Task 8.2: Dashboard Pages
+jsx
+// src/pages/Dashboard/Home.jsx
+// Show: statistics, "Start Audit" button
+
+// src/pages/Dashboard/MyAudits.jsx
+// List all user audits
+// Filters: completed, processing, all
+
+// src/pages/Dashboard/Profile.jsx
+// Edit profile
+// Change password
+
+// src/pages/Dashboard/PaymentHistory.jsx
+// Payment history
+// Download receipts
+Task 8.3: Report Viewer
+Create: frontend/src/components/ReportViewer.jsx
+
+✅ Display brief report (HTML)
+
+✅ "Buy Full Report 900₽" button
+
+✅ Progress Bar (semaphore 🟢🟡🔴)
+
+👨‍💼 PHASE 9: FRONTEND - ADMIN DASHBOARD
+Task 9.1: Admin Dashboard
+Create: frontend/src/pages/AdminDashboard.jsx
+
+Requirements:
+
+✅ See ONLY paid audits
+
+✅ Statistics (revenue, payments)
+
+✅ Can change package prices
+
+✅ Can re-audit
+
+✅ Can edit descriptions
+
+Task 9.2: Backend Endpoints for Admin
+javascript
+GET /api/admin/audits (only paid)
+GET /api/admin/payments
+POST /api/admin/packages/:id/update-price
+POST /api/admin/audits/:id/re-audit
+🔐 PHASE 10: FRONTEND - SUPERADMIN DASHBOARD
+Task 10.1: SuperAdmin Dashboard
+Create: frontend/src/pages/SuperAdminDashboard.jsx
+
+Requirements:
+
+✅ See EVERYTHING (all audits - paid and unpaid)
+
+✅ All users
+
+✅ All payments
+
+✅ Audit logs (full log)
+
+✅ Admin management
+
+✅ Theme designer (10 themes)
+
+✅ Change site name
+
+Task 10.2: Site Settings Form
+Create: frontend/src/components/SiteSettings.jsx
+
+jsx
+// Form to change:
+// - Site name (SecureLex.ru → other)
+// - Support email
+// - Logo URL
+// - Description
+
+// On save:
+// POST /api/superadmin/settings/update
+// Updates everywhere: header, footer, emails, reports
+Task 10.3: Theme Manager
+Create: frontend/src/components/ThemeManager.jsx
+
+jsx
+// List of 10 themes:
+// - Minimalist
+// - Corporate
+// - Glassmorphism
+// - Dark Pro
+// - Colorful
+// - Retro 80s
+// - Brutalist
+// - Luxury
+// - Playful
+// - Cyberpunk
+
+// For each theme:
+// - CSS editor
+// - Preview
+// - "Apply to All" button
+🎨 PHASE 11: 10 DESIGN THEMES
+Task 11.1: Create 10 CSS Themes
+Create: frontend/src/styles/themes/
+
+text
+themes/
+├── minimalist.css
+├── corporate.css
+├── glassmorphism.css
+├── dark-pro.css
+├── colorful.css
+├── retro-80s.css
+├── brutalist.css
+├── luxury.css
+├── playful.css
+└── cyberpunk.css
+Each theme should contain:
+
+css
+:root {
+  --color-primary: #2563EB;
+  --color-secondary: #E5E7EB;
+  --color-bg: #FAFAFA;
+  --color-text: #1F2937;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --font-family: 'Inter', sans-serif;
+  --border-radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: white;
+  padding: 10px 20px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+}
+
+/* ... remaining components */
+Task 11.2: 10 Theme Examples
+css
+/* 1. Minimalist */
+--color-primary: #2563EB;
+--color-bg: #FAFAFA;
+
+/* 2. Corporate */
+--color-primary: #1E40AF;
+--color-bg: #F8FAFC;
+
+/* 3. Glassmorphism */
+background: rgba(255, 255, 255, 0.25);
+backdrop-filter: blur(10px);
+
+/* 4. Dark Pro */
+--color-bg: #0F172A;
+--color-text: #E2E8F0;
+
+/* 5. Colorful */
+--color-primary: #EC4899;
+--color-secondary: #F59E0B;
+
+/* 6. Retro 80s */
+--color-primary: #FF006E;
+--color-secondary: #FFB703;
+
+/* 7. Brutalist */
+--color-bg: #FFFFFF;
+--border: 2px solid #000000;
+
+/* 8. Luxury */
+--color-primary: #FFD700;
+--color-bg: #1A1A1A;
+
+/* 9. Playful */
+--color-primary: #00D9FF;
+--border-radius: 20px;
+
+/* 10. Cyberpunk */
+--color-primary: #00FF00;
+--color-bg: #0D0221;
+📊 PHASE 12: PROGRESS BAR & SEMAPHORE
+Task 12.1: Progress Bar Component
+Create: frontend/src/components/ProgressBar.jsx
+
+jsx
+<ProgressBar 
+  completed={70} 
+  total={100} 
+  status="processing"
+/>
+
+// Display:
+// - Progress bar (70%)
+// - List of completed criteria (✅)
+// - List in progress (⏳)
+// - List of errors (❌)
+// - Remaining time
+Task 12.2: Semaphore Component
+Create: frontend/src/components/Semaphore.jsx
+
+jsx
+<Semaphore 
+  green={40}    // 40% OK
+  yellow={35}   // 35% Warning
+  red={25}      // 25% Error
+/>
+
+// Display:
+// 🟢 40% - OK
+// 🟡 35% - Warning
+// 🔴 25% - Error
+// Overall recommendation
+📄 PHASE 13: REPORTS
+Task 13.1: Brief Report
+Create: frontend/src/components/BriefReport.jsx
+
+jsx
+// HTML report, displayed on screen
+// Contains:
+// - Overall score (%)
+// - Results by criteria
+// - Urgent recommendations
+// - "Buy Full Report 900₽" button
+Task 13.2: PDF Report (backend)
+Create: backend/utils/pdfGenerator.js
+
+javascript
+// Use pdfkit or puppeteer
+// Generate PDF with:
+// - Full analysis
+// - Error screenshots
+// - Code examples
+// - Regulatory links
+// - Fix timeline table
+Task 13.3: Backend Endpoint
+javascript
+POST /api/reports/generate-pdf
+{
+  "audit_id": 123
+}
+
+Response: { pdf_url: "https://..." }
+// Save PDF to VK Cloud Storage
+📧 PHASE 14: EMAIL NOTIFICATIONS
+Task 14.1: Email Templates
+Create: backend/templates/emails/
+
+text
+├── welcome.html (welcome)
+├── verification.html (email verification)
+├── audit-started.html (audit started)
+├── audit-completed.html (audit completed)
+├── payment-received.html (payment received)
+└── report-ready.html (report ready)
+Task 14.2: Email Service
+Create: backend/utils/emailService.js
+
+javascript
+async function sendEmail(to, type, data) {
+  // Load template
+  // Substitute data
+  // Send via Yandex Mail
+  // Log in DB (emails_log)
+}
+🚀 PHASE 15: INTEGRATION & TESTING
+Task 15.1: Full Workflow
+text
+1. User registers
+2. Enters URL (flexible format)
+3. Selects package from dropdown
+4. URL normalized on backend
+5. Pays via Yandex.Kassa
+6. Audit starts
+7. Progress Bar displayed
+8. Email sent
+9. Brief report displayed
+10. Can buy full PDF
+Task 15.2: Test Data
+bash
+# Test user
+Email: test@securelex.ru
+Password: Test123456!
+
+# Test admin
+Email: admin@securelex.ru
+Password: Admin123456!
+
+# Test superadmin
+Email: superadmin@securelex.ru
+Password: SuperAdmin123456!
+
+# Test website URLs
+example.com
+www.example.com
+https://example.com
+shop.online
+test.ru
+✅ FINAL CHECKLIST
+ All 15 database tables created
+
+ Auth system working (register, login)
+
+ Dropdown packages working (9 packages)
+
+ URL normalization working
+
+ Audit form working
+
+ Yandex.Kassa payments integrated
+
+ Audit starts after payment
+
+ Progress Bar displays
+
+ Brief report generates
+
+ PDF report generates
+
+ User Dashboard working
+
+ Admin Dashboard working (only paid)
+
+ SuperAdmin Dashboard working (sees all)
+
+ 10 design themes working
+
+ SuperAdmin can change site name
+
+ Email notifications sending
+
+ All 3 dashboard types functional
+
+ Mobile responsive (Tailwind)
+
+ Light/Dark modes working
+
+ Security: HTTPS, JWT, bcrypt, validation
+
+📞 IMPORTANT FILES FOR REFERENCE
+Use these TZ files during development:
+
+01_EXECUTIVE_SUMMARY.md - overall overview
+
+02_ARCHITECTURE_OVERVIEW.md - system integration + URL normalizer
+
+10_PACKAGES_DROPDOWN.md - dropdown structure
+
+05_USER_DASHBOARD.md - what to display for user
+
+06_ADMIN_DASHBOARD.md - what to display for admin
+
+13_SUPERADMIN_DASHBOARD.md - what to display for superadmin (+ site name change)
+
+07_PROGRESS_BAR_DESIGN.md - progress bar structure
+
+08_REPORTS_SYSTEM.md - report structure
+
+09_DESIGN_SYSTEM_THEMES.md - 10 themes

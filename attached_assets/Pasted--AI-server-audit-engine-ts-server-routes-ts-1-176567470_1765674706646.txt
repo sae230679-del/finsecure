@@ -1,0 +1,142 @@
+Нужно довести до конца логику AI‑аудита с режимами в server/audit-engine.ts и server/routes.ts.
+
+1. Типы и базовый отчёт
+1.1. В server/audit-engine.ts рядом с интерфейсами AuditReport и AuditCheckResult объяви:
+
+ts
+export type AuditAiMode = "gigachat_only" | "openai_only" | "hybrid";
+
+export interface AuditOptions {
+  aiMode?: AuditAiMode;
+}
+1.2. Выдели из текущей реализации runAudit (если она есть) или из общей логики аудита функцию базового отчёта без AI:
+
+ts
+async function buildBaseAuditReport(url: string): Promise<AuditReport> {
+  // 1) получить WebsiteData через fetchWebsite
+  // 2) выполнить все текущие проверки (технические, юридические и т.д.), чтобы собрать AuditCheckResult[]
+  // 3) посчитать passedCount, warningCount, failedCount, totalCount
+  // 4) вычислить scorePercent и severity (например: (passed + 0.5 * warning) / total * 100)
+  // 5) вернуть AuditReport с этими полями, а summary/recommendations можно оставить пустыми или базовыми
+}
+Не меняй сами проверки, только вынеси их в эту функцию.
+
+2. Новый runAudit с режимами
+2.1. Реализуй runAudit так:
+
+ts
+export async function runAudit(url: string, options: AuditOptions = {}): Promise<AuditReport> {
+  const aiMode: AuditAiMode = options.aiMode ?? "hybrid";
+
+  const base = await buildBaseAuditReport(url);
+
+  let giga: { summary?: string; recommendations?: string[] } | null = null;
+  let open: { summary?: string; recommendations?: string[] } | null = null;
+
+  if (aiMode === "gigachat_only" || aiMode === "hybrid") {
+    giga = await generateGigaChat152Report(base);
+  }
+
+  if (aiMode === "openai_only" || aiMode === "hybrid") {
+    open = await generateOpenAiEnhancement(base);
+  }
+
+  const summary = open?.summary ?? giga?.summary ?? base.summary;
+  const recommendations =
+    open?.recommendations ??
+    giga?.recommendations ??
+    base.recommendations ??
+    [];
+
+  return {
+    ...base,
+    summary,
+    recommendations,
+  };
+}
+2.2. Если runExpressAudit сейчас вызывает старый runAudit, аккуратно обнови его, чтобы он вызывал:
+
+либо buildBaseAuditReport с урезанным набором проверок;
+
+либо существующую “облегчённую” логику (главное — не ломать публичный API).
+
+3. Реализация generateGigaChat152Report и generateOpenAiEnhancement
+3.1. В server/audit-engine.ts убедись, что есть функции:
+
+ts
+async function generateGigaChat152Report(report: AuditReport): Promise<{ summary: string; recommendations: string[] } | null>
+async function generateOpenAiEnhancement(report: AuditReport): Promise<{ summary: string; recommendations: string[] } | null>
+Если их ещё нет — реализуй по упрощённой схеме:
+
+GigaChat:
+
+фильтрует из report.checks только category === "fz152";
+
+вызывает уже существующий callGigaChat с system‑prompt и JSON‑payload;
+
+возвращает { summary, recommendations } или null.
+
+OpenAI:
+
+использует уже созданный клиент openai;
+
+передаёт в промпт url, scorePercent, severity и все checks;
+
+возвращает { summary, recommendations } или null.
+
+Ничего не меняй в самих вызовах API, только оберни их.
+
+4. Переменная окружения AUDIT_AI_MODE и routes.ts
+4.1. В server/routes.ts импорты:
+
+ts
+import { runAudit, type AuditAiMode } from "./audit-engine";
+4.2. Добавь функцию:
+
+ts
+function getCurrentAiMode(): AuditAiMode {
+  const mode = (process.env.AUDIT_AI_MODE as AuditAiMode | undefined) ?? "hybrid";
+  if (mode === "gigachat_only" || mode === "openai_only" || mode === "hybrid") {
+    return mode;
+  }
+  return "hybrid";
+}
+4.3. В маршруте создания полного аудита (POST /api/audits, где вызывается runAudit`):
+
+получи режим:
+
+ts
+const aiMode = getCurrentAiMode();
+передай в runAudit:
+
+ts
+const report = await runAudit(safeUrl, { aiMode });
+Ничего не меняй в формате ответа; summary и recommendations просто станут более умными.
+
+5. Подготовка к переключателю в админке
+5.1. Пока храни режим только в process.env.AUDIT_AI_MODE, но:
+
+прокомментируй в routes.ts около getCurrentAiMode, что позже это будет читаться из настроек/БД.
+
+Значения ENV:
+
+"gigachat_only"
+
+"openai_only"
+
+"hybrid" (по умолчанию).
+
+6. Требования
+Не менять внешний контракт API (пути, поля ответа).
+
+Не добавлять новые зависимости.
+
+В конце опиши:
+
+какие функции были добавлены/изменены в audit-engine.ts;
+
+как сейчас определяется режим AI;
+
+как использовать AUDIT_AI_MODE в .env (примеры значений).
+
+После того как агент отработает, пришли сюда его краткий отчёт (особенно про buildBaseAuditReport и формат AuditReport) — можно будет при необходимости подправить промпты GigaChat/OpenAI или предложить варианты значений по умолчанию для режимов на проде
