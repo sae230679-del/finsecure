@@ -95,8 +95,18 @@ app.use(express.urlencoded({ extended: false }));
 const PgSession = connectPgSimple(session);
 
 console.log(`[CONFIG] Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
-// Always use secure cookies since Replit uses HTTPS
-console.log(`[CONFIG] Cookie settings: sameSite=none, secure=true`);
+
+// GUARD: Insecure localhost cookies forbidden in production
+const allowInsecureLocalhost = process.env.ALLOW_INSECURE_LOCALHOST_COOKIES === "true";
+if (isProduction && allowInsecureLocalhost) {
+  console.error("[FATAL] ALLOW_INSECURE_LOCALHOST_COOKIES forbidden in production. Exiting.");
+  process.exit(1);
+}
+
+// Dev-only: allow insecure cookies for localhost curl testing
+const cookieSecure = allowInsecureLocalhost ? false : true;
+const cookieSameSite = allowInsecureLocalhost ? "lax" as const : "none" as const;
+console.log(`[CONFIG] Cookie settings: sameSite=${cookieSameSite}, secure=${cookieSecure}, insecureLocalhost=${allowInsecureLocalhost}`);
 
 const sessionStore = new PgSession({
   pool,
@@ -119,8 +129,8 @@ app.use(
     cookie: {
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: "none" as const,
-      secure: true,
+      sameSite: cookieSameSite,
+      secure: cookieSecure,
     },
   })
 );

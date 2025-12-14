@@ -1,0 +1,169 @@
+Сейчас видно главное: экспресс‑проверка реально работает (polling, 11.8 сек, rknCheck есть), но полная приёмка всё ещё не закрыта, потому что полный аудит и PDF так и не протестированы “по факту” из‑за сессий (curl по HTTP не получает cookie из‑за secure: true). Это ожидаемо: в вашем server/index.ts в production включается cookie.secure и sameSite=none, и на HTTP (localhost) браузер/ curl cookie не сохранит.​
+
+Ниже даю адаптированный промт, который 1) не ломает безопасность, 2) позволяет протестировать полный аудит + PDF локально, 3) не требует “моков”, 4) даёт доказательства. Он учитывает ваш Contract Map:
+
+express: POST /api/public/express-check → token, потом GET /api/public/express-check/:token
+
+full audit: GET /api/audits/:id включает results[].rknCheckJson
+
+БД: audit_results.rkn_check_json (jsonb)
+
+PDF: /api/audits/:id/pdf с inline/no-store.​
+
+ПРОМТ ДЛЯ REPLIT AGENT (ФИНАЛЬНАЯ ПРИЁМКА + РЕШЕНИЕ С COOKIE SECURE)
+Ты уже доказал экспресс‑проверку. Теперь нужно закрыть полный аудит + PDF реальными запросами и записями в БД. Проблема: session cookie не ставится в curl по HTTP, потому что cookie.secure=true. Нельзя отключать безопасность “навсегда”, но можно добавить строго dev‑исключение, чтобы тестировать локально.
+
+Шаг 0 — Зафиксировать текущий режим
+Выведи текущие значения:
+
+NODE_ENV
+
+req.secure за nginx/без nginx (лог в middleware на /api/auth/login)
+
+какие cookie параметры выставляются (secure/sameSite)
+
+Покажи фрагмент server/index.ts, где задаются session cookie опции (secure/sameSite).​
+
+Часть A — DEV‑исключение для cookie secure (только для localhost)
+Цель: дать возможность curl тестов только в dev, не затрагивая production.
+
+A1) Реализуй dev‑flag
+Добавь env флаг: ALLOW_INSECURE_LOCALHOST_COOKIES=true
+
+Логика:
+
+если NODE_ENV !== "production" и ALLOW_INSECURE_LOCALHOST_COOKIES=true:
+
+cookie.secure = false
+
+sameSite = "lax" (или оставить как сейчас, но главное — не secure)
+
+иначе оставить как сейчас.
+
+Важно:
+
+В production это НЕ должно включаться ни при каких условиях.
+
+Добавь защиту: если NODE_ENV==="production" и ALLOW_INSECURE_LOCALHOST_COOKIES=true → process.exit(1) с логом.
+
+Commit: chore(dev): allow insecure localhost cookies behind explicit flag
+
+Часть B — Реальный тест полного аудита (создать completed audit)
+Цель: получить хотя бы 1 completed audit, чтобы проверить audit_results.rkn_check_json и PDF “по факту”.
+
+B1) Подготовка
+Установи ALLOW_INSECURE_LOCALHOST_COOKIES=true в dev env.
+
+Перезапусти сервер.
+
+Подтверди, что /api/auth/login отдаёт Set-Cookie в ответе на HTTP localhost:
+
+curl -v -X POST http://localhost:5000/api/auth/login -H "Content-Type: application/json" -c /tmp/cookies.txt -d '{"email":"test2@test.ru","password":"test123"}' 2>&1 | grep -i "set-cookie\|HTTP/"
+
+Критерий: есть Set-Cookie: connect.sid=...
+
+B2) Создать full audit
+Выполни:
+
+curl -s -X POST http://localhost:5000/api/audits -H "Content-Type: application/json" -b /tmp/cookies.txt -d '{"websiteUrl":"example.com","packageType":"basic"}' | tee /tmp/audit_create.json
+
+Достань id и запусти polling:
+
+AUDIT_ID=$(cat /tmp/audit_create.json | jq -r '.id')
+
+каждые 2 сек: GET /api/audits/$AUDIT_ID пока status="completed" или 120 сек timeout.
+
+Когда completed:
+
+сохрани GET /api/audits/$AUDIT_ID в /tmp/audit.json
+
+покажи ключевые поля:
+
+jq '.status,.websiteUrlNormalized?,.results|length' /tmp/audit.json
+
+jq '.results[0].rknCheckJson' /tmp/audit.json (путь уточни по фактическому JSON)
+
+Критерий: audit completed.
+
+Часть C — БД‑доказательство rkn_check_json
+Цель: доказать, что audit_results.rkn_check_json заполняется фактически, а не “код готов”.
+
+Выполни SQL:
+
+SELECT id, audit_id, rkn_check_json, score_percent, severity, created_at FROM audit_results ORDER BY id DESC LIMIT 3;
+
+Покажи строку с твоим audit_id:
+
+SELECT id, audit_id, rkn_check_json FROM audit_results WHERE audit_id = <AUDIT_ID> LIMIT 1;
+
+Критерий:
+
+запись существует
+
+rkn_check_json не NULL и содержит поля status/used/confidence/needsCompanyDetails.
+
+Часть D — PDF доказательства на реальном аудите
+Только после completed audit.
+
+Headers:
+
+curl -I http://localhost:5000/api/audits/<AUDIT_ID>/pdf -b /tmp/cookies.txt
+Критерий:
+
+200 OK
+
+Content-Type application/pdf
+
+Content-Disposition inline
+
+Cache-Control содержит no-store/no-cache
+
+Content-Length > 0
+
+Файл:
+
+curl -s -o /tmp/report.pdf http://localhost:5000/api/audits/<AUDIT_ID>/pdf -b /tmp/cookies.txt
+
+ls -lh /tmp/report.pdf
+(опционально) file /tmp/report.pdf
+
+Критерий: не 0 байт, PDF валидный.
+
+Часть E — iPhone Safari (минимальный реальный тест)
+Если есть доступ к iPhone:
+
+открой https://<dev-domain>/api/audits/<AUDIT_ID>/pdf (именно HTTPS домен, не localhost)
+
+скрин/видео: PDF открылся.
+
+Если iPhone нет — честно отметь “не проверено”, но тогда приёмка по iOS остаётся условной.
+
+Часть F — Экспресс: подтверждение “не апселл вместо отчёта”
+Ты уже доказал API. Теперь докажи UI:
+
+видео/скрин: экспресс‑форма → loading → итоговый отчёт (11 критериев) без экрана “купить вместо результата”.
+
+Часть G — Итог
+Приложи:
+
+вывод curl login (с set-cookie)
+
+audit create response (id)
+
+audit polling completion
+
+SQL row из audit_results
+
+curl -I PDF headers
+
+размер /tmp/report.pdf
+
+Список коммитов и файлов.
+
+Запреты:
+
+не трогать production безопасность
+
+не добавлять моков
+
+не “очищать таблицы” как часть решения (чистка public_audits для rate limit — ок для теста, но не как фикс).

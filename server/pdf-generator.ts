@@ -335,8 +335,13 @@ export async function generatePdfReport(data: AuditReportData): Promise<Buffer> 
 
     const fontPath = getFontPath();
     console.log(`[PDF-GEN] Using font: ${fontPath}`);
-    doc.registerFont("DejaVu", fontPath);
-    doc.font("DejaVu");
+    try {
+      doc.registerFont("DejaVu", fontPath);
+      doc.font("DejaVu");
+    } catch (fontError) {
+      console.log(`[PDF-GEN] Font error, using Helvetica: ${fontError}`);
+      doc.font("Helvetica");
+    }
 
     const primaryColor = "#1a56db";
     const secondaryColor = "#6b7280";
