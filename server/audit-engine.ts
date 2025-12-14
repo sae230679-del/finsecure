@@ -957,3 +957,361 @@ export async function runExpressAudit(
 
   return report;
 }
+
+// ==================== DEBUG AUDIT WITH CRAWLER ====================
+
+interface PageInfo {
+  url: string;
+  status: number;
+  bytes: number;
+  error?: string;
+  discoveredFrom?: "sitemap" | "links" | "start";
+}
+
+interface CheckEvidence {
+  urls: string[];
+  markers: string[];
+}
+
+interface DebugCheckResult {
+  name: string;
+  status: "passed" | "warning" | "failed";
+  details: string;
+  evidence: CheckEvidence;
+}
+
+interface RknData {
+  innFound: string | null;
+  ogrnFound: string | null;
+  nameFound: string | null;
+  needsCompanyDetails: boolean;
+  confidence: "high" | "medium" | "low" | "none";
+}
+
+interface DebugAuditResult {
+  pages: PageInfo[];
+  checks: DebugCheckResult[];
+  rkn: RknData;
+  debug: {
+    pagesCrawled: number;
+    pagesFailed: number;
+    timeMs: number;
+    topErrors: string[];
+  };
+}
+
+function extractInternalLinks(html: string, baseUrl: URL): string[] {
+  const linkPattern = /href\s*=\s*["']([^"'#]+)["']/gi;
+  const links: Set<string> = new Set();
+  let match;
+  
+  while ((match = linkPattern.exec(html)) !== null) {
+    try {
+      const href = match[1];
+      if (href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:")) continue;
+      
+      let fullUrl: URL;
+      if (href.startsWith("http://") || href.startsWith("https://")) {
+        fullUrl = new URL(href);
+      } else if (href.startsWith("/")) {
+        fullUrl = new URL(href, baseUrl.origin);
+      } else {
+        fullUrl = new URL(href, baseUrl.href);
+      }
+      
+      if (fullUrl.hostname === baseUrl.hostname) {
+        links.add(fullUrl.origin + fullUrl.pathname);
+      }
+    } catch {}
+  }
+  
+  return Array.from(links).slice(0, 50);
+}
+
+async function fetchSitemap(baseUrl: URL): Promise<string[]> {
+  const sitemapUrls = [
+    `${baseUrl.origin}/sitemap.xml`,
+    `${baseUrl.origin}/sitemap_index.xml`,
+  ];
+  
+  for (const sitemapUrl of sitemapUrls) {
+    try {
+      const data = await fetchWebsite(sitemapUrl, 5000);
+      if (data.statusCode === 200 && data.html) {
+        const urlMatches = data.html.match(/<loc>([^<]+)<\/loc>/gi) || [];
+        return urlMatches
+          .map(m => m.replace(/<\/?loc>/gi, ""))
+          .filter(u => u.startsWith("http"))
+          .slice(0, 30);
+      }
+    } catch {}
+  }
+  return [];
+}
+
+function checkPrivacyPolicyWithEvidence(html: string, url: string): DebugCheckResult {
+  const patterns: { pattern: RegExp; label: string }[] = [
+    { pattern: /политик[аи|уыей]\s*конфиденциальности/i, label: "политика конфиденциальности" },
+    { pattern: /privacy\s*policy/i, label: "privacy policy" },
+    { pattern: /обработк[аиуеой]\s*персональных\s*данных/i, label: "обработка ПДн" },
+    { pattern: /защит[аиуеой]\s*персональных\s*данных/i, label: "защита ПДн" },
+    { pattern: /href\s*=\s*["'][^"']*privacy[^"']*["']/i, label: "ссылка /privacy" },
+    { pattern: /href\s*=\s*["'][^"']*policy[^"']*["']/i, label: "ссылка /policy" },
+    { pattern: /href\s*=\s*["'][^"']*конфиденциальност[^"']*["']/i, label: "ссылка конфиденциальность" },
+  ];
+
+  const foundMarkers: string[] = [];
+  for (const { pattern, label } of patterns) {
+    if (pattern.test(html)) {
+      foundMarkers.push(label);
+    }
+  }
+
+  return {
+    name: "Политика ПДн",
+    status: foundMarkers.length > 0 ? "passed" : "failed",
+    details: foundMarkers.length > 0 
+      ? `Найдены маркеры: ${foundMarkers.join(", ")}`
+      : "Маркеры политики ПДн не найдены. Искались: политика конфиденциальности, privacy policy, обработка ПДн, ссылки /privacy, /policy",
+    evidence: {
+      urls: [url],
+      markers: foundMarkers,
+    },
+  };
+}
+
+function checkConsentWithEvidence(html: string, url: string): DebugCheckResult {
+  const formPatterns = [/<form[^>]*>/i, /<input[^>]*type\s*=\s*["'](email|tel|phone|text)["']/i];
+  const consentPatterns: { pattern: RegExp; label: string }[] = [
+    { pattern: /согласи[еяюо]\s*(на\s*)?(обработку|передачу)/i, label: "согласие на обработку" },
+    { pattern: /даю\s*согласие/i, label: "даю согласие" },
+    { pattern: /принимаю\s*(условия|политику)/i, label: "принимаю условия" },
+    { pattern: /type\s*=\s*["']checkbox["'][^>]*согласи/i, label: "checkbox согласие" },
+    { pattern: /персональных?\s*данных?/i, label: "персональные данные" },
+  ];
+
+  const hasForm = formPatterns.some(p => p.test(html));
+  const foundMarkers: string[] = [];
+  
+  for (const { pattern, label } of consentPatterns) {
+    if (pattern.test(html)) {
+      foundMarkers.push(label);
+    }
+  }
+
+  if (!hasForm) {
+    return {
+      name: "Согласие в формах",
+      status: "passed",
+      details: "Формы с email/phone/name не обнаружены на странице",
+      evidence: { urls: [url], markers: ["нет форм"] },
+    };
+  }
+
+  return {
+    name: "Согласие в формах",
+    status: foundMarkers.length > 0 ? "passed" : "failed",
+    details: foundMarkers.length > 0
+      ? `Найдены маркеры согласия рядом с формами: ${foundMarkers.join(", ")}`
+      : "Формы найдены, но маркеры согласия (согласие/персональн) не обнаружены",
+    evidence: {
+      urls: [url],
+      markers: hasForm ? (foundMarkers.length > 0 ? foundMarkers : ["форма без согласия"]) : [],
+    },
+  };
+}
+
+function checkCookieBannerWithEvidence(html: string, url: string): DebugCheckResult {
+  const patterns: { pattern: RegExp; label: string }[] = [
+    { pattern: /cookie\s*banner/i, label: "cookie banner class/id" },
+    { pattern: /cookie\s*consent/i, label: "cookie consent" },
+    { pattern: /accept.*cookie|принять.*cookie/i, label: "accept cookie" },
+    { pattern: /использу[ео][тм]\s*cookie/i, label: "используем cookie" },
+    { pattern: /мы\s*используем\s*cookie/i, label: "мы используем cookie" },
+    { pattern: /файл[аов]*\s*cookie/i, label: "файлы cookie" },
+  ];
+
+  const foundMarkers: string[] = [];
+  for (const { pattern, label } of patterns) {
+    if (pattern.test(html)) {
+      foundMarkers.push(label);
+    }
+  }
+
+  const jsIndicators = /setCookie|getCookie|cookieConsent|gdpr|gtag.*consent/i.test(html);
+  
+  let status: "passed" | "warning" | "failed" = "warning";
+  let details = "";
+  
+  if (foundMarkers.length > 0) {
+    status = "passed";
+    details = `Cookie-баннер обнаружен: ${foundMarkers.join(", ")}`;
+  } else if (jsIndicators) {
+    status = "warning";
+    details = "Возможен JS-баннер (найдены JS-сигналы), но статический HTML не содержит явных маркеров";
+    foundMarkers.push("JS indicators present");
+  } else {
+    status = "warning";
+    details = "Cookie-баннер не обнаружен в статическом HTML. Возможно рендерится через JS";
+  }
+
+  return {
+    name: "Cookie баннер",
+    status,
+    details,
+    evidence: { urls: [url], markers: foundMarkers },
+  };
+}
+
+function checkContactsWithEvidence(html: string, url: string): DebugCheckResult {
+  const foundMarkers: string[] = [];
+  
+  const phoneMatch = html.match(/\+7\s*\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/);
+  if (phoneMatch) foundMarkers.push(`телефон: ${phoneMatch[0]}`);
+  
+  const phone8Match = html.match(/8\s*\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/);
+  if (phone8Match && !phoneMatch) foundMarkers.push(`телефон: ${phone8Match[0]}`);
+  
+  const emailMatch = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  if (emailMatch) foundMarkers.push(`email: ${emailMatch[0]}`);
+  
+  if (/контакт|связаться|обратная\s*связь/i.test(html)) {
+    foundMarkers.push("раздел контактов");
+  }
+
+  return {
+    name: "Контакты/реквизиты",
+    status: foundMarkers.length > 0 ? "passed" : "warning",
+    details: foundMarkers.length > 0
+      ? `Найдено: ${foundMarkers.join("; ")}`
+      : "Контактная информация (email/телефон/адрес) не найдена",
+    evidence: { urls: [url], markers: foundMarkers },
+  };
+}
+
+function extractRknData(html: string): RknData {
+  const innMatch = html.match(/инн\s*:?\s*(\d{10,12})/i);
+  const ogrnMatch = html.match(/огрн\s*:?\s*(\d{13,15})/i);
+  
+  let nameFound: string | null = null;
+  const oooMatch = html.match(/ооо\s*["«]([^"»]{2,50})["»]/i);
+  const ipMatch = html.match(/ип\s+([а-яё]+\s+[а-яё]+\s*[а-яё]*)/i);
+  
+  if (oooMatch) nameFound = `ООО "${oooMatch[1]}"`;
+  else if (ipMatch) nameFound = `ИП ${ipMatch[1]}`;
+
+  const innFound = innMatch ? innMatch[1] : null;
+  const ogrnFound = ogrnMatch ? ogrnMatch[1] : null;
+  
+  let confidence: "high" | "medium" | "low" | "none" = "none";
+  if (innFound && ogrnFound && nameFound) confidence = "high";
+  else if (innFound || ogrnFound) confidence = "medium";
+  else if (nameFound) confidence = "low";
+
+  return {
+    innFound,
+    ogrnFound,
+    nameFound,
+    needsCompanyDetails: !innFound && !ogrnFound,
+    confidence,
+  };
+}
+
+export async function runDebugAudit(
+  url: string,
+  options: { maxPages?: number; depthLimit?: number; timeoutMs?: number } = {}
+): Promise<DebugAuditResult> {
+  const startTime = Date.now();
+  const { maxPages = 30, depthLimit = 2, timeoutMs = 20000 } = options;
+  
+  const pages: PageInfo[] = [];
+  const errors: string[] = [];
+  const visited = new Set<string>();
+  const allHtml: string[] = [];
+  
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return {
+      pages: [{ url, status: 0, bytes: 0, error: "Invalid URL" }],
+      checks: [],
+      rkn: { innFound: null, ogrnFound: null, nameFound: null, needsCompanyDetails: true, confidence: "none" },
+      debug: { pagesCrawled: 0, pagesFailed: 1, timeMs: Date.now() - startTime, topErrors: ["Invalid URL"] },
+    };
+  }
+
+  // Try sitemap first
+  const sitemapUrls = await fetchSitemap(parsed);
+  const urlsToCrawl: { url: string; source: "sitemap" | "links" | "start" }[] = [];
+  
+  if (sitemapUrls.length > 0) {
+    sitemapUrls.slice(0, maxPages).forEach(u => urlsToCrawl.push({ url: u, source: "sitemap" }));
+  } else {
+    urlsToCrawl.push({ url, source: "start" });
+  }
+
+  // Crawl pages
+  for (const item of urlsToCrawl) {
+    if (visited.has(item.url)) continue;
+    if (pages.length >= maxPages) break;
+    if (Date.now() - startTime > timeoutMs) {
+      errors.push("Timeout exceeded");
+      break;
+    }
+    
+    visited.add(item.url);
+    const data = await fetchWebsite(item.url, 8000);
+    
+    pages.push({
+      url: item.url,
+      status: data.statusCode,
+      bytes: data.html.length,
+      error: data.error,
+      discoveredFrom: item.source,
+    });
+
+    if (data.error) {
+      errors.push(`${item.url}: ${data.error}`);
+    } else if (data.html) {
+      allHtml.push(data.html);
+      
+      // Extract links from first page if no sitemap
+      if (item.source === "start" && sitemapUrls.length === 0) {
+        const links = extractInternalLinks(data.html, parsed);
+        links.slice(0, maxPages - 1).forEach(link => {
+          if (!visited.has(link)) {
+            urlsToCrawl.push({ url: link, source: "links" });
+          }
+        });
+      }
+    }
+  }
+
+  // Combine all HTML for checks
+  const combinedHtml = allHtml.join("\n");
+  const mainUrl = pages[0]?.url || url;
+
+  // Run checks with evidence
+  const checks: DebugCheckResult[] = [
+    checkPrivacyPolicyWithEvidence(combinedHtml, mainUrl),
+    checkConsentWithEvidence(combinedHtml, mainUrl),
+    checkCookieBannerWithEvidence(combinedHtml, mainUrl),
+    checkContactsWithEvidence(combinedHtml, mainUrl),
+  ];
+
+  // Extract RKN data
+  const rkn = extractRknData(combinedHtml);
+
+  return {
+    pages,
+    checks,
+    rkn,
+    debug: {
+      pagesCrawled: pages.filter(p => !p.error).length,
+      pagesFailed: pages.filter(p => p.error).length,
+      timeMs: Date.now() - startTime,
+      topErrors: errors.slice(0, 5),
+    },
+  };
+}

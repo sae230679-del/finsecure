@@ -14,7 +14,7 @@ import {
   isEmailConfigured
 } from "./email";
 import crypto from "crypto";
-import { runExpressAudit, runAudit, checkWebsiteExists } from "./audit-engine";
+import { runExpressAudit, runAudit, checkWebsiteExists, runDebugAudit } from "./audit-engine";
 import { generatePdfReport } from "./pdf-generator";
 
 declare module "express-session" {
@@ -2218,6 +2218,48 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Express report purchase error:", error);
       res.status(500).json({ error: "Ошибка при создании отчета" });
+    }
+  });
+
+  // Debug audit endpoint with detailed diagnostics
+  app.post("/api/audit/debug", async (req: Request, res: Response) => {
+    try {
+      const { url, maxPages, timeoutMs } = req.body;
+      
+      if (!url) {
+        return res.status(400).json({ error: "URL обязателен" });
+      }
+
+      const result = await runDebugAudit(url, {
+        maxPages: maxPages || 30,
+        timeoutMs: timeoutMs || 20000,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Debug audit error:", error);
+      res.status(500).json({ error: "Ошибка при выполнении debug-аудита" });
+    }
+  });
+
+  // GET version for easy browser testing
+  app.get("/api/audit/debug", async (req: Request, res: Response) => {
+    try {
+      const url = req.query.url as string;
+      
+      if (!url) {
+        return res.status(400).json({ error: "URL обязателен (?url=https://...)" });
+      }
+
+      const result = await runDebugAudit(url, {
+        maxPages: 30,
+        timeoutMs: 20000,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Debug audit error:", error);
+      res.status(500).json({ error: "Ошибка при выполнении debug-аудита" });
     }
   });
 
