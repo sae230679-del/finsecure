@@ -861,7 +861,7 @@ function runLevel1Checks(data: WebsiteData): AuditCheckResult[] {
 
 async function runLevel2Analysis(
   url: string, 
-  html: string, 
+  evidenceBundle: EvidenceBundle, 
   level1Results: AuditCheckResult[],
   aiMode: AuditAiMode = "gigachat_only"
 ): Promise<{ additionalChecks: AuditCheckResult[]; summary: string; recommendations: string[] }> {
@@ -905,7 +905,7 @@ async function runLevel2Analysis(
 
   const failedChecks = level1Results.filter(r => r.status === "failed" || r.status === "warning");
   
-  const htmlSnippet = html.substring(0, 15000);
+  const evidenceJson = JSON.stringify(evidenceBundle, null, 2);
 
   const systemPrompt = `Ты - эксперт по соответствию сайтов требованиям ФЗ-152 (О персональных данных) и ФЗ-149 (Об информации).
 
@@ -933,8 +933,8 @@ async function runLevel2Analysis(
 Результаты автоматических проверок:
 ${failedChecks.map(c => `- ${c.name}: ${c.status} - ${c.details}`).join("\n")}
 
-HTML страницы (фрагмент):
-${htmlSnippet}`;
+Структурированные данные аудита (Evidence Bundle):
+${evidenceJson}`;
 
   const parseAIResult = (result: any): { additionalChecks: AuditCheckResult[]; summary: string; recommendations: string[] } => {
     const additionalChecks: AuditCheckResult[] = (result.additional_issues || []).map((issue: any) => ({
@@ -1160,6 +1160,9 @@ export async function runAudit(
   
   onProgress?.(2, level1Results);
 
+  const rknCheck = buildRknCheck(websiteData.html, url);
+  const evidenceBundle = buildEvidenceBundle(level1Results, url);
+
   let additionalChecks: AuditCheckResult[] = [];
   let summary = "";
   let recommendations: string[] = [];
@@ -1167,7 +1170,7 @@ export async function runAudit(
   if (level2) {
     onProgress?.(3, level1Results);
     
-    const level2Results = await runLevel2Analysis(url, websiteData.html, level1Results, aiMode);
+    const level2Results = await runLevel2Analysis(url, evidenceBundle, level1Results, aiMode);
     additionalChecks = level2Results.additionalChecks;
     summary = level2Results.summary;
     recommendations = level2Results.recommendations;
@@ -1211,6 +1214,8 @@ export async function runAudit(
     summary,
     recommendations,
     processedAt: new Date(),
+    rknCheck,
+    evidenceBundle,
   };
 }
 
