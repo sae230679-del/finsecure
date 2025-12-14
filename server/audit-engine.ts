@@ -145,6 +145,82 @@ async function callGigaChat(systemPrompt: string, userPrompt: string): Promise<a
   });
 }
 
+async function callYandexGpt(systemPrompt: string, userPrompt: string): Promise<any> {
+  const iamToken = process.env.YANDEX_IAM_TOKEN;
+  const endpoint = process.env.YANDEX_GPT_ENDPOINT || "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
+  const modelUri = process.env.YANDEX_GPT_MODEL_URI || "gpt://b1g0000000000000000/yandexgpt-lite";
+
+  if (!iamToken) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const parsedUrl = new URL(endpoint);
+      
+      const requestBody = JSON.stringify({
+        modelUri: modelUri,
+        completionOptions: {
+          stream: false,
+          temperature: 0.6,
+          maxTokens: 2000,
+        },
+        messages: [
+          { role: "system", text: systemPrompt },
+          { role: "user", text: userPrompt },
+        ],
+      });
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: 443,
+        path: parsedUrl.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${iamToken}`,
+          "x-folder-id": modelUri.split("/")[2] || "",
+        },
+        rejectUnauthorized: true,
+      };
+
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => body += chunk);
+        res.on("end", () => {
+          try {
+            const result = JSON.parse(body);
+            if (result.result && result.result.alternatives && result.result.alternatives[0]) {
+              const content = result.result.alternatives[0].message?.text || "";
+              const jsonMatch = content.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                resolve(JSON.parse(jsonMatch[0]));
+              } else {
+                resolve({ summary: content, recommendations: [], additional_issues: [] });
+              }
+            } else {
+              console.error("YandexGPT response error:", body);
+              resolve(null);
+            }
+          } catch (e) {
+            console.error("YandexGPT parse error:", e);
+            resolve(null);
+          }
+        });
+      });
+
+      req.on("error", (e) => {
+        console.error("YandexGPT request error:", e);
+        resolve(null);
+      });
+
+      req.write(requestBody);
+      req.end();
+    } catch (e) {
+      console.error("YandexGPT call error:", e);
+      resolve(null);
+    }
+  });
+}
+
 export interface AuditCheckResult {
   id: string;
   name: string;
@@ -184,7 +260,7 @@ export interface AuditReport {
   processedAt: Date;
 }
 
-export type AuditAiMode = "gigachat_only" | "openai_only" | "hybrid" | "none";
+export type AuditAiMode = "gigachat_only" | "openai_only" | "hybrid" | "none" | "yandex_only" | "tri_hybrid";
 
 export interface AuditOptions {
   level2?: boolean;
@@ -765,6 +841,30 @@ ${htmlSnippet}`;
     }
   };
 
+  const yandexIamToken = process.env.YANDEX_IAM_TOKEN;
+  
+  const callYandexGptProvider = async (): Promise<any | null> => {
+    if (!yandexIamToken) return null;
+    try {
+      console.log("Using YandexGPT for AI analysis");
+      const result = await callYandexGpt(systemPrompt, userPrompt);
+      return result;
+    } catch (error: any) {
+      console.error("YandexGPT analysis error:", error);
+      return null;
+    }
+  };
+
+  // Helper to evaluate response quality (count recommendations and issues)
+  const evaluateResponse = (result: any): number => {
+    if (!result) return 0;
+    let score = 0;
+    if (result.summary && result.summary.length > 20) score += 1;
+    if (result.recommendations && result.recommendations.length > 0) score += result.recommendations.length;
+    if (result.additional_issues && result.additional_issues.length > 0) score += result.additional_issues.length * 2;
+    return score;
+  };
+
   // Execute based on aiMode
   if (aiMode === "gigachat_only") {
     const result = await callGigaChatProvider();
@@ -788,6 +888,44 @@ ${htmlSnippet}`;
     result = await callGigaChatProvider();
     if (result) {
       return parseAIResult(result);
+    }
+  } else if (aiMode === "yandex_only") {
+    if (!yandexIamToken) {
+      return {
+        additionalChecks: [],
+        summary: "YandexGPT недоступен: не настроен YANDEX_IAM_TOKEN",
+        recommendations: ["Настройте YANDEX_IAM_TOKEN для анализа"],
+      };
+    }
+    const result = await callYandexGptProvider();
+    if (result) {
+      return parseAIResult(result);
+    }
+  } else if (aiMode === "tri_hybrid") {
+    // Call all three providers in parallel, pick best result
+    console.log("Tri-hybrid mode: calling all AI providers in parallel");
+    const results = await Promise.allSettled([
+      callGigaChatProvider(),
+      callOpenAI(),
+      callYandexGptProvider(),
+    ]);
+
+    const validResults: { result: any; score: number; provider: string }[] = [];
+    
+    const providers = ["GigaChat", "OpenAI", "YandexGPT"];
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled" && r.value) {
+        const score = evaluateResponse(r.value);
+        validResults.push({ result: r.value, score, provider: providers[idx] });
+      }
+    });
+
+    if (validResults.length > 0) {
+      // Sort by score descending and pick best
+      validResults.sort((a, b) => b.score - a.score);
+      const best = validResults[0];
+      console.log(`Tri-hybrid mode: selected ${best.provider} with score ${best.score}`);
+      return parseAIResult(best.result);
     }
   }
 

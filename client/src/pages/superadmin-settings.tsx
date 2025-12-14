@@ -514,7 +514,9 @@ export default function SuperAdminSettingsPage() {
                   <SelectContent>
                     <SelectItem value="gigachat_only">Только GigaChat (Сбер)</SelectItem>
                     <SelectItem value="openai_only">Только OpenAI (ChatGPT)</SelectItem>
-                    <SelectItem value="hybrid">Гибридный (оба провайдера)</SelectItem>
+                    <SelectItem value="yandex_only">Только YandexGPT</SelectItem>
+                    <SelectItem value="hybrid">Гибридный (OpenAI + GigaChat)</SelectItem>
+                    <SelectItem value="tri_hybrid">Три-гибрид (все 3 провайдера)</SelectItem>
                     <SelectItem value="none">Отключён (без ИИ-анализа)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -530,7 +532,9 @@ export default function SuperAdminSettingsPage() {
               <p className="text-sm text-muted-foreground">
                 {formData.ai_mode === "gigachat_only" && "GigaChat используется для анализа на русском языке"}
                 {formData.ai_mode === "openai_only" && "OpenAI обеспечивает высокое качество анализа"}
-                {formData.ai_mode === "hybrid" && "Используются оба провайдера для максимальной точности"}
+                {formData.ai_mode === "yandex_only" && "YandexGPT для анализа через Яндекс Cloud"}
+                {formData.ai_mode === "hybrid" && "Используются OpenAI и GigaChat для максимальной точности"}
+                {formData.ai_mode === "tri_hybrid" && "Параллельный вызов всех 3 провайдеров, выбор лучшего ответа"}
                 {formData.ai_mode === "none" && "ИИ-анализ отключён, проверка выполняется только базовыми правилами"}
               </p>
             </div>
