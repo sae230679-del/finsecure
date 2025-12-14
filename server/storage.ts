@@ -329,22 +329,7 @@ export class DatabaseStorage implements IStorage {
   async seedPackages(): Promise<void> {
     const existingPackages = await db.select().from(schema.auditPackages);
     
-    // Check if express_report exists, add it if missing (for existing databases)
-    const hasExpressReport = existingPackages.some(p => p.type === "express_report");
-    if (!hasExpressReport) {
-      await db.insert(schema.auditPackages).values({
-        name: "Экспресс-отчёт",
-        type: "express_report",
-        price: 900,
-        criteriaCount: 10,
-        durationMin: 1,
-        durationMax: 5,
-        description: "Подробный отчёт по результатам экспресс-проверки",
-        features: ["Подробный PDF-отчёт", "Рекомендации по исправлению", "Оценка рисков и штрафов"],
-      });
-    }
-    
-    // Only seed all packages if database is empty
+    // Only seed packages if database is empty
     if (existingPackages.length > 0) return;
 
     const packagesData = [
