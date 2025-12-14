@@ -1,0 +1,214 @@
+Ты сказал “всё готово”. Теперь нужна строгая приёмка с доказательствами.
+ВАЖНО: никаких мокапов/рандома/симуляций — запрещено.
+
+Шаг 0 — Инвентаризация контрактов (обязательное, 5 минут)
+Сначала найди и выпиши точные имена полей/колонок/эндпоинтов, чтобы дальше тесты были не “примерные”, а 1:1.
+
+Найди точный handler экспресс‑проверки:
+
+файл и строки, где объявлен app.post("/api/public/express-check" ...) (или эквивалент).​
+
+выпиши точный shape response JSON (ключи верхнего уровня и ключи rknCheck если есть)
+
+Найди точный handler PDF:
+
+файл и строки, где объявлен app.get("/api/audits/:id/pdf" ...) и вызов generatePdfReport.​
+
+Найди где сохраняется rknCheck в БД:
+
+Drizzle schema таблиц (audit_results или другое)
+
+точное имя JSON колонки (ты писал rknCheckJson, проверь как реально называется)
+
+покажи место, где эта колонка заполняется (insert/update).
+
+Для формы реквизитов:
+
+найди точные имена полей запроса (например companyDetails, companyName, inn) в:
+
+zod schema запроса /api/public/express-check (и/или клиента)
+
+клиентском коде формы
+
+В конце шага 0 дай “Contract Map” в виде:
+
+ExpressCheckRequest: { ... }
+
+ExpressCheckResponse: { ... }
+
+FullAuditResponse: { ... } (где rknCheck)
+
+DBColumnName: ... (точное)
+
+PDFRoute: path + headers set
+
+Если не сделаешь этот шаг — дальнейшие тесты считаются невыполненными.
+
+Шаг 1 — ЖЁСТКИЙ ЗАПРЕТ МОКАПОВ (доказательства)
+Ранее в проекте встречались getRandomStatus/simulateAuditResults — это недопустимо.​
+
+Выполни и пришли вывод:
+
+grep -R "simulateAuditResults" -n server client || true
+
+grep -R "getRandomStatus" -n server client || true
+
+grep -R "Math.random" -n server | head -n 80 || true
+
+Покажи код guard’а AUDIT_MOCK_MODE:
+
+файл+строки, где он проверяется
+
+поведение:
+
+в production (NODE_ENV=production) при AUDIT_MOCK_MODE=true приложение должно отказываться работать (exit или 500 на аудит) с ясным логом “MOCK MODE FORBIDDEN”.
+
+Запрещено: любые fallback “если не получилось — вернём mock”.
+
+Шаг 2 — Сервис №1: Экспресс‑проверка показывает краткий отчёт СРАЗУ
+Сервис №1: POST /api/public/express-check (публичный), должен возвращать краткий отчёт на экран без покупки.​
+
+После Contract Map подставь реальные имена полей и выполни:
+
+API test (реальный endpoint):
+
+curl -i -s -X POST http://localhost:5000/api/public/express-check -H "Content-Type: application/json" -d '<REAL_REQUEST_JSON>' > /tmp/express_raw.txt
+
+cat /tmp/express_raw.txt | head -n 40
+
+cat /tmp/express_raw.txt | tail -n 40
+
+JSON проверка:
+
+сохрани body (без headers) в файл /tmp/express.json
+
+cat /tmp/express.json | jq 'keys'
+
+cat /tmp/express.json | jq '<REAL_PATH_TO_CHECKS> | length'
+
+cat /tmp/express.json | jq '<REAL_PATH_TO_SCORE_AND_TOTALS>'
+
+Ожидается:
+
+HTTP 200
+
+список чеков не пустой
+
+есть score/итоги
+
+НЕТ ответа вида “купи/закажи и только тогда увидишь результат” вместо отчёта.
+
+UI доказательство:
+
+скрин Network → request /api/public/express-check → response preview (видно checks/score)
+
+скрин экрана, где сразу виден краткий отчёт.
+
+Если UI показывает только “купить” — исправляй UI state/рендер.
+
+Шаг 3 — Сервис №1: RKN criterion + запрос ИНН/Наименования (точно по вашим полям)
+Требование: если реквизиты не извлеклись — экспресс должен запросить ИНН и Наименование юрлица.
+
+Сценарий “ИНН не найден”:
+
+используй URL без реквизитов
+
+выполни express‑check
+
+пришли JSON и докажи, что:
+
+возвращается флаг (например needsCompanyDetails) = true
+
+возвращается структура запроса реквизитов (например companyDetailsRequest.fields содержит INN+Name)
+
+возвращается rknCheck (пусть даже status=not_checked/pending)
+
+Сценарий “пользователь ввёл реквизиты”:
+
+повтори express‑check, передав реквизиты во входном JSON по вашим реальным полям
+
+пришли JSON и докажи:
+
+rknCheck.used стал manual или inn
+
+rknCheck.query.inn заполнен
+
+confidence повысилась
+
+UI доказательство (mobile first):
+
+покажи форму запроса реквизитов
+
+покажи что после ввода пересчёт/повторный запрос реально выполняется (Network screenshot).
+
+Шаг 4 — Сервис №2: Полный аудит сохраняет rknCheck (и возвращает его)
+Сервис №2: полный аудит (личный кабинет) через POST /api/audits и просмотр результатов.​
+
+Создай аудит:
+
+авторизуйся
+
+сделай POST /api/audits (по вашим реальным полям request)
+
+получи auditId
+
+Проверь JSON результата:
+
+GET /api/audits/:id
+
+докажи что rknCheck присутствует в ответе
+
+БД доказательство:
+
+выполни SQL/Drizzle select по таблице результатов и покажи:
+
+id
+
+значение JSON колонки (точное имя из Contract Map)
+
+если имя таблицы/колонки другое — используй реальные.
+
+Ожидается: JSON не NULL и соответствует структуре rknCheck.
+
+Шаг 5 — PDF: 200 OK + правильные headers + открывается на iPhone Safari
+PDF: GET /api/audits/:id/pdf должен отдавать валидный PDF (не 500) и открываться в Safari iOS.​
+
+Headers proof:
+
+curl -I http://localhost:5000/api/audits/<ID>/pdf -H "Cookie: connect.sid=..."
+
+Ожидается:
+
+200
+
+Content-Type: application/pdf
+
+Content-Disposition: inline; filename="audit-report.pdf" (или ваш filename, но обязательно inline)
+
+(желательно) Cache-Control: no-store
+
+File proof:
+
+curl -s -o /tmp/report.pdf http://localhost:5000/api/audits/<ID>/pdf -H "Cookie: connect.sid=..."
+
+ls -lh /tmp/report.pdf
+Ожидается: файл не 0 байт.
+
+iOS proof:
+
+видео/скрин: открыть прямую ссылку /api/audits/<ID>/pdf в Safari.
+
+если на фронте было blob‑скачивание, добавь fallback “Open direct link” и покажи что используешь его на iOS.
+
+Шаг 6 — Отчёт о причинах (коротко, по делу)
+Когда всё зелёное:
+
+почему экспресс не показывал результат (что конкретно было сломано)
+
+почему PDF падал / не открывался на iOS (что конкретно было сломано)
+
+какие файлы изменены
+
+commit hashes
+
+Запрещено: писать “всё работает” без артефактов из шагов 2–5.
