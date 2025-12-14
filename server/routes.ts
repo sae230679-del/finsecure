@@ -2031,7 +2031,10 @@ export async function registerRoutes(
             totalCount: report.totalCount,
             scorePercent: report.scorePercent,
             severity: report.severity,
-            summaryJson: summaryResults,
+            summaryJson: {
+              checks: summaryResults,
+              rknCheck: report.rknCheck || null,
+            },
             completedAt: new Date(),
           });
         } catch (err: any) {
@@ -2084,6 +2087,10 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Проверка не найдена" });
       }
 
+      const summaryData = audit.summaryJson as any;
+      const checks = Array.isArray(summaryData) ? summaryData : (summaryData?.checks || []);
+      const rknCheck = summaryData?.rknCheck || null;
+
       res.json({
         token: audit.token,
         status: audit.status,
@@ -2095,7 +2102,8 @@ export async function registerRoutes(
         totalCount: audit.totalCount,
         scorePercent: audit.scorePercent,
         severity: audit.severity,
-        summary: audit.summaryJson,
+        summary: checks,
+        rknCheck: rknCheck,
         createdAt: audit.createdAt,
         completedAt: audit.completedAt,
       });

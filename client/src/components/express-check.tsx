@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { URLInput } from "@/components/url-input";
-import { Shield, ArrowRight, Loader2, AlertTriangle, CheckCircle2, XCircle, FileText, CreditCard, Zap, FileCheck } from "lucide-react";
+import { Shield, ArrowRight, Loader2, AlertTriangle, CheckCircle2, XCircle, FileText, CreditCard, Zap, FileCheck, Building2, HelpCircle } from "lucide-react";
 import { ScoreIndicator, FineEstimate, ResultsSummary } from "@/components/score-indicator";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
@@ -47,6 +47,16 @@ const auditStages = [
   { name: "Финальная проверка", duration: 5000 },
 ];
 
+type RknCheckResult = {
+  status: "passed" | "warning" | "failed" | "pending" | "not_checked";
+  confidence: "high" | "medium" | "low" | "none";
+  used: "inn" | "name" | "manual" | "none";
+  query: { inn?: string; name?: string };
+  details: string;
+  needsCompanyDetails?: boolean;
+  evidence?: { innFound?: string; nameFound?: string; urls?: string[] };
+};
+
 type ExpressResult = {
   scorePercent: number;
   severity: string;
@@ -54,6 +64,7 @@ type ExpressResult = {
   warningCount: number;
   failedCount: number;
   summary: any[];
+  rknCheck?: RknCheckResult | null;
 };
 
 function ExpressProgressBar({ 
@@ -206,6 +217,7 @@ export function ExpressCheck() {
             warningCount: data.warningCount || 0,
             failedCount: data.failedCount || 0,
             summary: data.summary || [],
+            rknCheck: data.rknCheck || null,
           });
           setIsChecking(false);
           if (pollingRef.current) {
@@ -384,6 +396,42 @@ export function ExpressCheck() {
               warningCount={result.warningCount}
               severity={result.severity === "low" ? "low" : result.severity === "medium" ? "medium" : "high"}
             />
+
+            {result.rknCheck && (
+              <div className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Проверка реестра РКН</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  {result.rknCheck.status === "passed" ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                  ) : result.rknCheck.status === "pending" ? (
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                  ) : result.rknCheck.status === "not_checked" ? (
+                    <HelpCircle className="w-4 h-4 text-muted-foreground shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                  )}
+                  <span className="text-muted-foreground">{result.rknCheck.details}</span>
+                </div>
+                {result.rknCheck.evidence?.innFound && (
+                  <div className="text-xs text-muted-foreground">
+                    ИНН: <span className="font-mono">{result.rknCheck.evidence.innFound}</span>
+                  </div>
+                )}
+                {result.rknCheck.evidence?.nameFound && (
+                  <div className="text-xs text-muted-foreground">
+                    Организация: {result.rknCheck.evidence.nameFound}
+                  </div>
+                )}
+                {result.rknCheck.needsCompanyDetails && (
+                  <div className="mt-2 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+                    Для полной проверки в реестре РКН закажите полный аудит и укажите ИНН организации
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="border-t pt-4 space-y-4">
               <div className="text-center text-sm font-medium">
