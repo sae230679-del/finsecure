@@ -545,8 +545,9 @@ export async function registerRoutes(
       const filename = `securelex-audit-${auditId}-${Date.now()}.pdf`;
       
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
       res.setHeader("Content-Length", pdfBuffer.length);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
       res.send(pdfBuffer);
     } catch (error: any) {
       console.error(`[PDF] Failed to generate PDF:`, error?.message || error);
