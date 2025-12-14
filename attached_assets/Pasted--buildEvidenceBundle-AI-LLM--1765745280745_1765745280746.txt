@@ -1,0 +1,90 @@
+Приложение перезапущено и работает. Нужно аккуратно реализовать:
+
+buildEvidenceBundle для AI/LLM
+
+Структуру rknCheck в отчёте (без реального парсинга реестра РКН)
+
+1. buildEvidenceBundle
+В server/audit-engine.ts (или рядом):
+
+Добавь функцию buildEvidenceBundle(report: AuditReport).
+
+Вход: полный AuditReport после runAllChecks (checks уже с evidence).
+
+Выход (TypeScript интерфейс опиши рядом):
+
+ts
+export interface EvidenceItem {
+  id: string;
+  url?: string;
+  textSnippet?: string;
+  markers?: string[];
+  rawStatus?: "passed" | "warning" | "failed";
+  category?: string;
+}
+
+export interface EvidenceBundle {
+  policy: EvidenceItem[];
+  consent: EvidenceItem[];
+  cookies: EvidenceItem[];
+  contacts: EvidenceItem[];
+  technical: EvidenceItem[];
+}
+Правила:
+
+В policy клади evidence из чеков категории fz152 и/или с именами вроде “Политика ПДн/Privacy Policy”.
+
+В consent – из чеков, касающихся согласия в формах.
+
+В cookies – cookie banner/policy.
+
+В contacts – ИНН/ОГРН/контакты.
+
+В technical – по HTTPS/headers (только краткие snippets, например “HSTS: missing”, “CSP: none”).
+
+Ограничения:
+
+max 10 элементов в каждой группе;
+
+textSnippet обрезай до 300–400 символов.
+
+Пронумеруй id, чтобы LLM мог ссылаться на них (например, policy-1, consent-2).
+
+Подключение:
+
+В runAudit после получения base и перед вызовами GigaChat/OpenAI/YandexGPT сформируй const evidenceBundle = buildEvidenceBundle(base) и передавай его в провайдеры как JSON (userPayload). Не передавай сырой HTML.
+
+2. Структура RKN check
+Определи интерфейс RknCheckResult (см. выше в ответе пользователя) и добавь rknCheck?: RknCheckResult в AuditReport.
+
+На этапе анализа реквизитов:
+
+если найден ИНН – заполни rknCheck с used: "inn", confidence: "high", status: "pending", evidence.innFound, evidence.urls.
+
+если ИНН/название не найдены – used: "none", status: "not_checked", needsCompanyDetails: true (флаг уже есть, нужно связать).
+
+если есть название, но нет ИНН – used: "name", confidence: "low", status: "pending".
+
+Не реализуй пока реальный HTTP-запрос в реестр РКН; вместо этого добавь TODO-комментарий с ссылкой на официальный портал.​
+
+3. Интеграция и возврат
+Убедись, что:
+
+buildEvidenceBundle используется во всех AI-режимах (gigachat_only, openai_only, yandex_only, hybrid, tri_hybrid).
+
+rknCheck попадает в JSON ответа API /api/audits и /api/audits/:id.
+
+Обнови типы в shared/schema.ts, если там описан AuditReport.
+
+Сделай 2 коммита:
+
+"Add evidence bundle builder for AI reviewers"
+
+"Add RKN check structure to audit report (INN/name/manual)"
+
+В конце дай:
+
+список изменённых файлов;
+
+пример evidenceBundle и rknCheck из одного реального аудита (можно с тестового URL, без чувствительных данных).
+

@@ -246,6 +246,37 @@ export interface WebsiteData {
   error?: string;
 }
 
+export interface EvidenceItem {
+  id: string;
+  url?: string;
+  textSnippet?: string;
+  markers?: string[];
+  rawStatus?: "passed" | "warning" | "failed";
+  category?: string;
+}
+
+export interface EvidenceBundle {
+  policy: EvidenceItem[];
+  consent: EvidenceItem[];
+  cookies: EvidenceItem[];
+  contacts: EvidenceItem[];
+  technical: EvidenceItem[];
+}
+
+export interface RknCheckResult {
+  status: "passed" | "warning" | "failed" | "pending" | "not_checked";
+  confidence: "high" | "medium" | "low" | "none";
+  used: "inn" | "name" | "manual" | "none";
+  query: { inn?: string; name?: string };
+  details: string;
+  needsCompanyDetails?: boolean;
+  evidence?: {
+    innFound?: string;
+    nameFound?: string;
+    urls?: string[];
+  };
+}
+
 export interface AuditReport {
   url: string;
   checks: AuditCheckResult[];
@@ -258,6 +289,8 @@ export interface AuditReport {
   summary: string;
   recommendations: string[];
   processedAt: Date;
+  rknCheck?: RknCheckResult;
+  evidenceBundle?: EvidenceBundle;
 }
 
 export type AuditAiMode = "gigachat_only" | "openai_only" | "hybrid" | "none" | "yandex_only" | "tri_hybrid";
@@ -266,6 +299,121 @@ export interface AuditOptions {
   level2?: boolean;
   aiMode?: AuditAiMode;
   onProgress?: (stage: number, checks: AuditCheckResult[]) => void;
+}
+
+function truncateSnippet(text: string, maxLen = 350): string {
+  if (!text || text.length <= maxLen) return text;
+  return text.substring(0, maxLen) + "...";
+}
+
+function buildEvidenceBundle(checks: AuditCheckResult[], url: string): EvidenceBundle {
+  const bundle: EvidenceBundle = {
+    policy: [],
+    consent: [],
+    cookies: [],
+    contacts: [],
+    technical: [],
+  };
+
+  const MAX_PER_GROUP = 10;
+  let counters = { policy: 0, consent: 0, cookies: 0, contacts: 0, technical: 0 };
+
+  for (const check of checks) {
+    const item: EvidenceItem = {
+      id: "",
+      url: url,
+      textSnippet: truncateSnippet(check.details || check.description),
+      markers: check.evidence ? [truncateSnippet(check.evidence, 200)] : [],
+      rawStatus: check.status,
+      category: check.category,
+    };
+
+    const nameLower = check.name.toLowerCase();
+    const catLower = check.category.toLowerCase();
+
+    if (catLower === "fz152" || nameLower.includes("политик") || nameLower.includes("privacy") || nameLower.includes("конфиденциальност")) {
+      if (counters.policy < MAX_PER_GROUP) {
+        counters.policy++;
+        item.id = `policy-${counters.policy}`;
+        bundle.policy.push(item);
+      }
+    } else if (nameLower.includes("согласи") || nameLower.includes("consent") || nameLower.includes("пдн")) {
+      if (counters.consent < MAX_PER_GROUP) {
+        counters.consent++;
+        item.id = `consent-${counters.consent}`;
+        bundle.consent.push(item);
+      }
+    } else if (catLower === "cookies" || nameLower.includes("cookie") || nameLower.includes("куки")) {
+      if (counters.cookies < MAX_PER_GROUP) {
+        counters.cookies++;
+        item.id = `cookies-${counters.cookies}`;
+        bundle.cookies.push(item);
+      }
+    } else if (catLower === "fz149" || nameLower.includes("контакт") || nameLower.includes("реквизит") || nameLower.includes("инн") || nameLower.includes("огрн")) {
+      if (counters.contacts < MAX_PER_GROUP) {
+        counters.contacts++;
+        item.id = `contacts-${counters.contacts}`;
+        bundle.contacts.push(item);
+      }
+    } else if (catLower === "security" || catLower === "technical" || nameLower.includes("https") || nameLower.includes("header") || nameLower.includes("ssl")) {
+      if (counters.technical < MAX_PER_GROUP) {
+        counters.technical++;
+        item.id = `technical-${counters.technical}`;
+        bundle.technical.push(item);
+      }
+    }
+  }
+
+  return bundle;
+}
+
+function buildRknCheck(html: string, url: string): RknCheckResult {
+  const innPattern = /инн\s*:?\s*(\d{10,12})/i;
+  const namePattern = /ооо\s*["«]?([^"»]{2,50})["»]?|ип\s+([а-яёА-ЯЁ]+\s+[а-яёА-ЯЁ]+)/i;
+
+  const innMatch = html.match(innPattern);
+  const nameMatch = html.match(namePattern);
+
+  const innFound = innMatch ? innMatch[1] : undefined;
+  const nameFound = nameMatch ? (nameMatch[1] || nameMatch[2])?.trim() : undefined;
+
+  if (innFound) {
+    return {
+      status: "pending",
+      confidence: "high",
+      used: "inn",
+      query: { inn: innFound },
+      details: `ИНН найден: ${innFound}. Требуется проверка в реестре РКН.`,
+      evidence: {
+        innFound,
+        urls: [url],
+      },
+    };
+  }
+
+  if (nameFound) {
+    return {
+      status: "pending",
+      confidence: "low",
+      used: "name",
+      query: { name: nameFound },
+      details: `Название организации: ${nameFound}. ИНН не найден, точность низкая.`,
+      needsCompanyDetails: true,
+      evidence: {
+        nameFound,
+        urls: [url],
+      },
+    };
+  }
+
+  return {
+    status: "not_checked",
+    confidence: "none",
+    used: "none",
+    query: {},
+    details: "ИНН и название организации не найдены на странице. Требуется ручной ввод данных.",
+    needsCompanyDetails: true,
+  };
 }
 
 async function fetchWebsite(urlString: string, timeout = 15000): Promise<WebsiteData> {
