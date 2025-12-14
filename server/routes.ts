@@ -605,7 +605,7 @@ export async function registerRoutes(
           
           console.log(`[AUDIT] Calling runAudit for ${normalizedUrl}...`);
           const report = await runAudit(normalizedUrl, { level2: true, aiMode });
-          console.log(`[AUDIT] runAudit completed: scorePercent=${report.scorePercent}, checks.length=${report.checks?.length || 0}, severity=${report.severity}`);
+          console.log(`[AUDIT] runAudit completed: scorePercent=${report.scorePercent}, checks.length=${report.checks?.length || 0}, severity=${report.severity}, rknCheck=${JSON.stringify(report.rknCheck)}`);
           
           const criteriaResults: CriteriaResult[] = report.checks.map(check => ({
             name: check.name,

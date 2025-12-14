@@ -1,0 +1,68 @@
+Ты закрыл PDF и dev‑cookie. Осталось закрыть RKN в полном аудите доказательствами из API и БД.
+
+1) Доказать, что rkn_check_json заполняется в audit_results
+Сейчас ты показывал строку audit_results без rkn_check_json. Нужно показать её с заполнением.
+
+Выполни и пришли вывод (полностью, не обрезая JSON):
+
+SELECT audit_id, rkn_check_json FROM audit_results WHERE audit_id = 1;
+
+Критерий:
+
+rkn_check_json != NULL
+
+внутри есть минимум поля: status, used, confidence, needsCompanyDetails (как в express rknCheck).
+Если rkn_check_json всё ещё NULL — это баг, чини.
+
+2) Доказать, что API отдаёт rknCheckJson в полном аудите
+Выполни:
+
+curl -s http://localhost:5000/api/audits/1 -b /tmp/cookies.txt > /tmp/audit.json
+
+cat /tmp/audit.json | jq '.results[0] | keys'
+
+cat /tmp/audit.json | jq '.results[0].rknCheckJson'
+
+Критерий:
+
+results не пустой
+
+results[0].rknCheckJson существует и совпадает по смыслу с audit_results.rkn_check_json.
+
+3) Если rkn_check_json NULL — исправить причину (без моков)
+Проверь два места, которые ты сам указал: routes.ts:623 и routes.ts:696, где пишется:
+
+rknCheckJson: report.rknCheck || null,
+
+Если report.rknCheck оказывается undefined/null в full audit, значит:
+
+rknCheck формируется только в express‑ветке, а в полной — нет, или
+
+не прокидывается в report при runAudit, или
+
+теряется при сериализации.
+
+Сделай фикс:
+
+rknCheck должен формироваться в одном общем месте и использоваться и в express, и в full audit.
+
+Даже если реквизиты не найдены — report.rknCheck всё равно должен быть объектом со status="not_checked", used="none", confidence="none", needsCompanyDetails=true.
+
+Commit: fix(audit): persist rknCheckJson for full audits
+
+4) Повторить полный прогон после фикса
+Создай новый аудит (audit_id=2) и дождись completed.
+
+Повтори пункты 1–2 для audit_id=2.
+
+Убедись, что PDF для audit_id=2 всё ещё 200.
+
+5) Итог (1 блок)
+Дай:
+
+SQL row audit_id, rkn_check_json
+
+jq вывод results[0].rknCheckJson
+
+headers PDF для нового аудита
+

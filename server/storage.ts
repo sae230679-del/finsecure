@@ -41,7 +41,7 @@ export interface IStorage {
   updateAuditStatus(id: number, status: string, completedAt?: Date): Promise<Audit | undefined>;
   getPaidAudits(): Promise<AuditWithDetails[]>;
   
-  createAuditResult(data: { auditId: number; criteriaJson: CriteriaResult[]; scorePercent: number; severity: string }): Promise<AuditResult>;
+  createAuditResult(data: { auditId: number; criteriaJson: CriteriaResult[]; rknCheckJson?: any; scorePercent: number; severity: string }): Promise<AuditResult>;
   saveAuditResults(auditId: number, criteriaResults: CriteriaResult[], score: number): Promise<AuditResult>;
 
   getPaymentsByUserId(userId: number): Promise<Payment[]>;
@@ -248,12 +248,13 @@ export class DatabaseStorage implements IStorage {
     return auditsWithDetails;
   }
 
-  async createAuditResult(data: { auditId: number; criteriaJson: CriteriaResult[]; scorePercent: number; severity: string }): Promise<AuditResult> {
+  async createAuditResult(data: { auditId: number; criteriaJson: CriteriaResult[]; rknCheckJson?: any; scorePercent: number; severity: string }): Promise<AuditResult> {
     const [result] = await db
       .insert(schema.auditResults)
       .values({
         auditId: data.auditId,
         criteriaJson: data.criteriaJson,
+        rknCheckJson: data.rknCheckJson || null,
         scorePercent: data.scorePercent,
         severity: data.severity,
       })
