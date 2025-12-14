@@ -59,6 +59,8 @@ export default function SuperAdminSettingsPage() {
     gigachatSource: string;
     openaiSource: string;
     yandexSource: string;
+    yandexModelUri: string;
+    yandexFolderId: string;
     currentMode: string;
   }>({
     queryKey: ["/api/superadmin/ai-status"],
@@ -67,6 +69,8 @@ export default function SuperAdminSettingsPage() {
   const [gigachatKey, setGigachatKey] = useState("");
   const [openaiKey, setOpenaiKey] = useState("");
   const [yandexKey, setYandexKey] = useState("");
+  const [yandexModelUri, setYandexModelUri] = useState("");
+  const [yandexFolderId, setYandexFolderId] = useState("");
   const [showGigachatKey, setShowGigachatKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showYandexKey, setShowYandexKey] = useState(false);
@@ -169,6 +173,13 @@ export default function SuperAdminSettingsPage() {
       setIsHydrated(true);
     }
   }, [settings]);
+
+  useEffect(() => {
+    if (aiStatus) {
+      setYandexModelUri(aiStatus.yandexModelUri || "");
+      setYandexFolderId(aiStatus.yandexFolderId || "");
+    }
+  }, [aiStatus]);
 
   const updateSettingMutation = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
@@ -744,6 +755,56 @@ export default function SuperAdminSettingsPage() {
                         <XCircle className="h-4 w-4" />
                       </Button>
                     )}
+                  </div>
+                  
+                  <div className="mt-4 pt-4 border-t space-y-3">
+                    <span className="text-sm text-muted-foreground">Дополнительные настройки YandexGPT:</span>
+                    <div className="space-y-2">
+                      <Label htmlFor="yandex_model_uri">Model URI</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="yandex_model_uri"
+                          value={yandexModelUri}
+                          onChange={(e) => setYandexModelUri(e.target.value)}
+                          placeholder="gpt://folder_id/yandexgpt-lite"
+                          data-testid="input-yandex-model-uri"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => updateSettingMutation.mutate({ key: "yandex_model_uri", value: yandexModelUri })}
+                          disabled={updateSettingMutation.isPending}
+                          data-testid="button-save-yandex-model-uri"
+                        >
+                          <Save className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        URI модели в формате gpt://folder_id/model_name
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="yandex_folder_id">Folder ID</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="yandex_folder_id"
+                          value={yandexFolderId}
+                          onChange={(e) => setYandexFolderId(e.target.value)}
+                          placeholder="b1g..."
+                          data-testid="input-yandex-folder-id"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => updateSettingMutation.mutate({ key: "yandex_folder_id", value: yandexFolderId })}
+                          disabled={updateSettingMutation.isPending}
+                          data-testid="button-save-yandex-folder-id"
+                        >
+                          <Save className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        ID каталога в Yandex Cloud (переопределяет folder_id из Model URI)
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

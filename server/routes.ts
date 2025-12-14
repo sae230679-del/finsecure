@@ -1178,6 +1178,10 @@ export async function registerRoutes(
       const modeSetting = await storage.getSystemSetting("ai_mode");
       const currentMode = modeSetting?.value || "gigachat_only";
       
+      // Get Yandex config settings
+      const yandexModelUriSetting = await storage.getSystemSetting("yandex_model_uri");
+      const yandexFolderIdSetting = await storage.getSystemSetting("yandex_folder_id");
+      
       res.json({
         gigachat: !!gigachatKey && gigachatKey.length > 0,
         gigachatMasked: gigachatKey ? maskApiKey(gigachatKey) : null,
@@ -1188,6 +1192,8 @@ export async function registerRoutes(
         yandex: !!yandexKey && yandexKey.length > 0,
         yandexMasked: yandexKey ? maskApiKey(yandexKey) : null,
         yandexSource,
+        yandexModelUri: yandexModelUriSetting?.value || "",
+        yandexFolderId: yandexFolderIdSetting?.value || "",
         currentMode,
       });
     } catch (error) {

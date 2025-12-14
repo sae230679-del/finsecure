@@ -37,3 +37,30 @@ export async function hasApiKey(provider: "gigachat" | "openai" | "yandex"): Pro
   const key = await getApiKey(provider);
   return key !== null && key.length > 0;
 }
+
+export async function getYandexConfig(): Promise<{ modelUri: string; folderId: string }> {
+  let modelUri = process.env.YANDEX_GPT_MODEL_URI || "";
+  let folderId = process.env.YANDEX_FOLDER_ID || "";
+  
+  // Try database settings first
+  try {
+    const modelUriSetting = await storage.getSystemSetting("yandex_model_uri");
+    if (modelUriSetting?.value) {
+      modelUri = modelUriSetting.value;
+    }
+    
+    const folderIdSetting = await storage.getSystemSetting("yandex_folder_id");
+    if (folderIdSetting?.value) {
+      folderId = folderIdSetting.value;
+    }
+  } catch (e) {
+    console.error("Failed to get Yandex config from database:", e);
+  }
+  
+  // Default values if not configured
+  if (!modelUri) {
+    modelUri = "gpt://b1g0000000000000000/yandexgpt-lite";
+  }
+  
+  return { modelUri, folderId };
+}

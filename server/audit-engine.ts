@@ -145,10 +145,12 @@ async function callGigaChat(systemPrompt: string, userPrompt: string): Promise<a
   });
 }
 
+import { getApiKey, getYandexConfig } from "./api-keys";
+
 async function callYandexGpt(systemPrompt: string, userPrompt: string): Promise<any> {
-  const iamToken = process.env.YANDEX_IAM_TOKEN;
+  const iamToken = await getApiKey("yandex");
   const endpoint = process.env.YANDEX_GPT_ENDPOINT || "https://llm.api.cloud.yandex.net/foundationModels/v1/completion";
-  const modelUri = process.env.YANDEX_GPT_MODEL_URI || "gpt://b1g0000000000000000/yandexgpt-lite";
+  const { modelUri, folderId } = await getYandexConfig();
 
   if (!iamToken) return null;
 
@@ -169,6 +171,9 @@ async function callYandexGpt(systemPrompt: string, userPrompt: string): Promise<
         ],
       });
 
+      // Determine folder ID: from config, or extract from modelUri
+      const effectiveFolderId = folderId || modelUri.split("/")[2] || "";
+
       const options = {
         hostname: parsedUrl.hostname,
         port: 443,
@@ -177,7 +182,7 @@ async function callYandexGpt(systemPrompt: string, userPrompt: string): Promise<
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${iamToken}`,
-          "x-folder-id": modelUri.split("/")[2] || "",
+          "x-folder-id": effectiveFolderId,
         },
         rejectUnauthorized: true,
       };
