@@ -16,8 +16,6 @@ function getFontPath(): string {
   console.error(`[PDF-GEN] Font not found: ${FONT_PATH} or ${altPath}`);
   return FONT_PATH;
 }
-const ROBOTO_REGULAR = path.join(process.cwd(), "server/fonts/Roboto-Regular.ttf");
-const ROBOTO_BOLD = path.join(process.cwd(), "server/fonts/Roboto-Bold.ttf");
 
 // AI mode type
 type AuditAiMode = "gigachat_only" | "openai_only" | "hybrid" | "none";

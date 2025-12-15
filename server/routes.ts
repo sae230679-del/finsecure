@@ -2321,8 +2321,9 @@ export async function registerRoutes(
         packageName: expressReportPackage.name,
         message: "Отчет создан, ожидает оплаты" 
       });
-    } catch (error) {
-      console.error("Express report purchase error:", error);
+    } catch (error: any) {
+      console.error("[EXPRESS-REPORT] Purchase error:", error?.message || error);
+      console.error("[EXPRESS-REPORT] Stack:", error?.stack);
       res.status(500).json({ error: "Ошибка при создании отчета" });
     }
   });

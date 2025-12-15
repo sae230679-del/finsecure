@@ -314,6 +314,19 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const rknRegistryCache = pgTable("rkn_registry_cache", {
+  id: serial("id").primaryKey(),
+  inn: varchar("inn", { length: 20 }).notNull().unique(),
+  companyName: varchar("company_name", { length: 500 }),
+  registrationNumber: varchar("registration_number", { length: 50 }),
+  registrationDate: varchar("registration_date", { length: 20 }),
+  isRegistered: boolean("is_registered").default(false).notNull(),
+  lastCheckedAt: timestamp("last_checked_at").defaultNow().notNull(),
+  rawData: jsonb("raw_data"),
+});
+
+export type RknRegistryEntry = typeof rknRegistryCache.$inferSelect;
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
