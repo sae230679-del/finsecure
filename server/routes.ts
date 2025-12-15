@@ -2044,8 +2044,11 @@ export async function registerRoutes(
       const data = expressCheckSchema.parse(req.body);
       const ipAddress = req.ip || req.socket.remoteAddress || "unknown";
       
+      const freeAuditLimitSetting = await storage.getSystemSetting("free_audit_limit");
+      const freeAuditLimit = freeAuditLimitSetting?.value ? parseInt(freeAuditLimitSetting.value) : 3;
+      
       const recentAudits = await storage.getRecentPublicAuditsByIp(ipAddress, 1);
-      if (recentAudits.length >= 3) {
+      if (recentAudits.length >= freeAuditLimit) {
         return res.status(429).json({ 
           error: "Превышен лимит бесплатных проверок. Попробуйте позже или зарегистрируйтесь для полного доступа." 
         });

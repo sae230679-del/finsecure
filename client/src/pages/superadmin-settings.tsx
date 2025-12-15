@@ -37,6 +37,7 @@ export default function SuperAdminSettingsPage() {
     yandex_metrika_code: "",
     yandex_webmaster_verification: "",
     widget_code: "",
+    free_audit_limit: "3",
   });
 
   const [contactData, setContactData] = useState({
@@ -349,6 +350,32 @@ export default function SuperAdminSettingsPage() {
                   <Save className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="free_audit_limit">Лимит бесплатных проверок (на IP)</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="free_audit_limit"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.free_audit_limit}
+                  onChange={(e) => setFormData({ ...formData, free_audit_limit: e.target.value })}
+                  placeholder="3"
+                  data-testid="input-free-audit-limit"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => handleSave("free_audit_limit")}
+                  disabled={updateSettingMutation.isPending}
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Максимальное количество бесплатных экспресс-проверок с одного IP-адреса
+              </p>
             </div>
           </CardContent>
         </Card>
