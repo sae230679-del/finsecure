@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Save, CreditCard, CheckCircle, XCircle, Eye, EyeOff, TestTube, AlertTriangle } from "lucide-react";
+import { Save, CreditCard, CheckCircle, XCircle, Eye, EyeOff, TestTube, AlertTriangle, Bug, ChevronDown, RefreshCw } from "lucide-react";
 
 type SystemSetting = {
   id: number;
@@ -18,12 +19,27 @@ type SystemSetting = {
   updatedAt: string;
 };
 
+type YookassaDiagnostics = {
+  lastPayload: any;
+  lastResponse: {
+    statusCode: number;
+    body: any;
+  } | null;
+  hasData: boolean;
+};
+
 export default function SuperAdminPaymentSettingsPage() {
   const { toast } = useToast();
   const [showSecretKey, setShowSecretKey] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
 
   const { data: settings, isLoading } = useQuery<SystemSetting[]>({
     queryKey: ["/api/superadmin/settings"],
+  });
+
+  const { data: diagnostics, refetch: refetchDiagnostics } = useQuery<YookassaDiagnostics>({
+    queryKey: ["/api/superadmin/yookassa-diagnostics"],
+    enabled: diagnosticsOpen,
   });
 
   const [formData, setFormData] = useState({
@@ -388,6 +404,69 @@ export default function SuperAdminPaymentSettingsPage() {
               <li>Добавьте Webhook URL в настройках ЮKassa</li>
               <li>Проверьте подключение и включите прием платежей</li>
             </ol>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Bug className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Диагностика ЮKassa</CardTitle>
+            </div>
+            <CardDescription>
+              Последний запрос и ответ API для отладки
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Collapsible open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm" data-testid="button-toggle-diagnostics">
+                    <ChevronDown className={`h-4 w-4 mr-2 transition-transform ${diagnosticsOpen ? "rotate-180" : ""}`} />
+                    {diagnosticsOpen ? "Скрыть" : "Показать диагностику"}
+                  </Button>
+                </CollapsibleTrigger>
+                {diagnosticsOpen && (
+                  <Button variant="ghost" size="sm" onClick={() => refetchDiagnostics()} data-testid="button-refresh-diagnostics">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Обновить
+                  </Button>
+                )}
+              </div>
+              <CollapsibleContent className="mt-4 space-y-4">
+                {diagnostics?.hasData ? (
+                  <>
+                    {diagnostics.lastResponse && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Label>Последний ответ API</Label>
+                          {diagnostics.lastResponse.statusCode === 200 ? (
+                            <Badge variant="default" className="bg-green-600">HTTP 200</Badge>
+                          ) : (
+                            <Badge variant="destructive">HTTP {diagnostics.lastResponse.statusCode}</Badge>
+                          )}
+                        </div>
+                        <pre className="bg-muted p-4 rounded-md text-xs overflow-x-auto max-h-64 overflow-y-auto" data-testid="text-last-response">
+                          {JSON.stringify(diagnostics.lastResponse.body, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {diagnostics.lastPayload && (
+                      <div className="space-y-2">
+                        <Label>Последний запрос (payload)</Label>
+                        <pre className="bg-muted p-4 rounded-md text-xs overflow-x-auto max-h-64 overflow-y-auto" data-testid="text-last-payload">
+                          {JSON.stringify(diagnostics.lastPayload, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Пока нет данных диагностики. Данные появятся после первой попытки оплаты.
+                  </p>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           </CardContent>
         </Card>
       </div>

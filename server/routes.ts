@@ -2271,6 +2271,37 @@ export async function registerRoutes(
     }
   });
 
+  // SuperAdmin: Get YooKassa diagnostics (last payload/response)
+  app.get("/api/superadmin/yookassa-diagnostics", requireSuperAdmin, async (req, res) => {
+    try {
+      let lastPayload = null;
+      let lastResponse = null;
+      
+      try {
+        const payloadData = fs.readFileSync("debug/yookassa-last-payload.json", "utf-8");
+        lastPayload = JSON.parse(payloadData);
+      } catch {
+        // File doesn't exist or is invalid
+      }
+      
+      try {
+        const responseData = fs.readFileSync("debug/yookassa-last-response.json", "utf-8");
+        lastResponse = JSON.parse(responseData);
+      } catch {
+        // File doesn't exist or is invalid
+      }
+      
+      res.json({
+        lastPayload,
+        lastResponse,
+        hasData: lastPayload !== null || lastResponse !== null,
+      });
+    } catch (error) {
+      console.error("YooKassa diagnostics error:", error);
+      res.status(500).json({ error: "Ошибка получения диагностики" });
+    }
+  });
+
   // Yookassa webhook handler
   app.post("/api/yookassa/webhook", async (req, res) => {
     try {
