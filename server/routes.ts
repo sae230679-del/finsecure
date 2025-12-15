@@ -414,6 +414,22 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/packages/:id", async (req, res) => {
+    try {
+      const packageId = parseInt(req.params.id);
+      if (isNaN(packageId)) {
+        return res.status(400).json({ error: "Invalid package ID" });
+      }
+      const pkg = await storage.getPackageById(packageId);
+      if (!pkg) {
+        return res.status(404).json({ error: "Package not found" });
+      }
+      res.json(pkg);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch package" });
+    }
+  });
+
   app.patch("/api/users/profile", requireAuth, async (req, res) => {
     try {
       const { name, phone, companyName, inn } = req.body;

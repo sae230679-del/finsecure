@@ -58,10 +58,24 @@ export default function CheckoutPage() {
     enabled: !!auditId,
   });
 
-  const { data: auditPackage } = useQuery<{ name: string; price: number }>({
-    queryKey: ["/api/packages", audit?.packageId],
+  const { data: auditPackage } = useQuery<{ 
+    id: number; 
+    name: string; 
+    price: number; 
+    type: string;
+    category: string;
+  }>({
+    queryKey: [`/api/packages/${audit?.packageId}`],
     enabled: !!audit?.packageId,
   });
+  
+  const getServiceName = () => {
+    if (!auditPackage) return "Аудит сайта";
+    if (auditPackage.category === "express" || auditPackage.type === "express_report") {
+      return "Экспресс-проверка сайта";
+    }
+    return "Полный аудит сайта";
+  };
 
   const paymentMutation = useMutation({
     mutationFn: async (data: { auditId: number; paymentMethod: PaymentMethodType; promoCodeId?: number; finalAmount?: number }) => {
@@ -339,17 +353,22 @@ export default function CheckoutPage() {
                 ) : audit ? (
                   <>
                     <div>
-                      <p className="font-medium">{auditPackage?.name || "Аудит сайта"}</p>
+                      <p className="font-medium">{getServiceName()}</p>
                       <p className="text-sm text-muted-foreground truncate">
                         {audit.websiteUrlNormalized}
                       </p>
+                      {auditPackage?.name && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Пакет: {auditPackage.name}
+                        </p>
+                      )}
                     </div>
                     
                     <Separator />
                     
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between gap-2">
-                        <span className="text-muted-foreground">Стоимость пакета</span>
+                        <span className="text-muted-foreground">Стоимость услуги</span>
                         <span>{formatPrice(auditPackage?.price || 0)}</span>
                       </div>
                       {selectedMethod === "sbp" && (
