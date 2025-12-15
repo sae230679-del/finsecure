@@ -1,0 +1,10 @@
+{
+  "statusCode": 401,
+  "body": {
+    "type": "error",
+    "id": "019b21dd-e10e-7e99-9866-995381fe6d9c",
+    "description": "Authentication type is not allowed",
+    "parameter": "Authorization",
+    "code": "invalid_credentials"
+  }
+}
