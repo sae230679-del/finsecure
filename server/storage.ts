@@ -328,27 +328,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async seedPackages(): Promise<void> {
-    const existingPackages = await db.select().from(schema.auditPackages);
-    
-    // Only seed packages if database is empty
-    if (existingPackages.length > 0) return;
+    await this.ensureDefaultPackages();
+  }
 
-    const packagesData = [
-      { name: "Лендинг", type: "landing", price: 3900, criteriaCount: 7, durationMin: 15, durationMax: 20, description: "Аудит одностраничного сайта", features: ["Политика конфиденциальности", "Согласие на обработку ПДн", "Cookie-баннер", "HTTPS / SSL сертификат", "Контактные данные", "Соответствие ФЗ-152", "Защита форм"] },
-      { name: "Корпоративный сайт", type: "corporate", price: 4900, criteriaCount: 10, durationMin: 25, durationMax: 30, description: "Аудит корпоративного сайта", features: ["Все критерии Лендинга", "Корпоративные политики", "Обработка заявок", "Реквизиты компании"] },
-      { name: "Интернет-магазин", type: "ecommerce", price: 7900, criteriaCount: 14, durationMin: 35, durationMax: 45, description: "Аудит интернет-магазина", features: ["Все критерии Корпоративного", "Оферта и условия продажи", "Политика возврата", "Безопасность платежей", "Защита клиентских данных"] },
-      { name: "SaaS / Сервис", type: "saas", price: 5900, criteriaCount: 10, durationMin: 30, durationMax: 40, description: "Аудит SaaS-платформы", features: ["Все критерии Лендинга", "Пользовательское соглашение", "Условия подписки", "Безопасность аккаунтов"] },
-      { name: "Портал / Сообщество", type: "portal", price: 6900, criteriaCount: 14, durationMin: 35, durationMax: 45, description: "Аудит портала или сообщества", features: ["Все критерии SaaS", "Модерация контента", "Правила сообщества", "Защита пользовательских данных"] },
-      { name: "Маркетплейс", type: "marketplace", price: 9900, criteriaCount: 18, durationMin: 45, durationMax: 60, description: "Аудит маркетплейса", features: ["Все критерии Интернет-магазина", "Правила для продавцов", "Защита покупателей", "Обработка споров", "Комиссии и выплаты"] },
-      { name: "Медиа / Блог", type: "media", price: 4900, criteriaCount: 10, durationMin: 25, durationMax: 35, description: "Аудит медиа-сайта или блога", features: ["Все критерии Лендинга", "Авторские права", "Комментарии и UGC", "Подписки и рассылки"] },
-      { name: "Медицинские услуги", type: "medical", price: 8900, criteriaCount: 15, durationMin: 40, durationMax: 55, description: "Аудит медицинского сайта", features: ["Все критерии Корпоративного", "Врачебная тайна", "Специальные категории ПДн", "Лицензии и сертификаты", "Медицинская информация", "Согласие на обработку мед. данных"] },
-      { name: "Детские услуги", type: "children", price: 8900, criteriaCount: 15, durationMin: 40, durationMax: 55, description: "Аудит сайта для детей", features: ["Все критерии Корпоративного", "Защита данных детей", "Согласие родителей", "Возрастная верификация", "Безопасный контент", "ФЗ-436 соответствие"] },
-      { name: "Другое", type: "other", price: 15900, criteriaCount: 25, durationMin: 60, durationMax: 90, description: "Универсальная проверка для любых сайтов", features: ["Анализ специфики сайта", "Выбор критериев", "Персональный подход", "Расширенные рекомендации", "Консультация эксперта"] },
-      { name: "Premium Audit", type: "premium", price: 39900, criteriaCount: 61, durationMin: 120, durationMax: 240, description: "Полный премиум-аудит с экспертным анализом", features: ["Все критерии всех пакетов", "Экспертный анализ", "Персональные рекомендации", "Подробный план исправлений", "Консультация с юристом", "Приоритетная поддержка"] },
-      { name: "Экспресс-отчёт", type: "express_report", price: 900, criteriaCount: 10, durationMin: 1, durationMax: 5, description: "Подробный отчёт по результатам экспресс-проверки", features: ["Подробный PDF-отчёт", "Рекомендации по исправлению", "Оценка рисков и штрафов"] },
+  async ensureDefaultPackages(): Promise<void> {
+    const defaultPackages = [
+      { type: "expressreport", name: "Экспресс‑отчёт (полный PDF)", price: 900, criteriaCount: 10, durationMin: 1, durationMax: 5, description: "Подробный отчёт по результатам экспресс-проверки", features: ["Подробный PDF-отчёт", "Рекомендации по исправлению", "Оценка рисков и штрафов"], category: "express_pdf" },
+      { type: "other", name: "Другое / Универсальный", price: 15900, criteriaCount: 25, durationMin: 60, durationMax: 90, description: "Универсальная проверка для любых сайтов", features: ["Анализ специфики сайта", "Выбор критериев", "Персональный подход", "Расширенные рекомендации", "Консультация эксперта"], category: "full_audit" },
+      { type: "landing", name: "Лендинг", price: 3900, criteriaCount: 7, durationMin: 15, durationMax: 20, description: "Аудит одностраничного сайта", features: ["Политика конфиденциальности", "Согласие на обработку ПДн", "Cookie-баннер", "HTTPS / SSL сертификат", "Контактные данные", "Соответствие ФЗ-152", "Защита форм"], category: "full_audit" },
+      { type: "corporate", name: "Корпоративный сайт", price: 4900, criteriaCount: 10, durationMin: 25, durationMax: 30, description: "Аудит корпоративного сайта", features: ["Все критерии Лендинга", "Корпоративные политики", "Обработка заявок", "Реквизиты компании"], category: "full_audit" },
+      { type: "ecommerce", name: "Интернет-магазин", price: 7900, criteriaCount: 14, durationMin: 35, durationMax: 45, description: "Аудит интернет-магазина", features: ["Все критерии Корпоративного", "Оферта и условия продажи", "Политика возврата", "Безопасность платежей", "Защита клиентских данных"], category: "full_audit" },
+      { type: "saas", name: "SaaS / Сервис", price: 5900, criteriaCount: 10, durationMin: 30, durationMax: 40, description: "Аудит SaaS-платформы", features: ["Все критерии Лендинга", "Пользовательское соглашение", "Условия подписки", "Безопасность аккаунтов"], category: "full_audit" },
+      { type: "portal", name: "Портал / Сообщество", price: 6900, criteriaCount: 14, durationMin: 35, durationMax: 45, description: "Аудит портала или сообщества", features: ["Все критерии SaaS", "Модерация контента", "Правила сообщества", "Защита пользовательских данных"], category: "full_audit" },
+      { type: "marketplace", name: "Маркетплейс", price: 9900, criteriaCount: 18, durationMin: 45, durationMax: 60, description: "Аудит маркетплейса", features: ["Все критерии Интернет-магазина", "Правила для продавцов", "Защита покупателей", "Обработка споров", "Комиссии и выплаты"], category: "full_audit" },
+      { type: "media", name: "Медиа / Блог", price: 4900, criteriaCount: 10, durationMin: 25, durationMax: 35, description: "Аудит медиа-сайта или блога", features: ["Все критерии Лендинга", "Авторские права", "Комментарии и UGC", "Подписки и рассылки"], category: "full_audit" },
+      { type: "medical", name: "Медицинские услуги", price: 8900, criteriaCount: 15, durationMin: 40, durationMax: 55, description: "Аудит медицинского сайта", features: ["Все критерии Корпоративного", "Врачебная тайна", "Специальные категории ПДн", "Лицензии и сертификаты", "Медицинская информация", "Согласие на обработку мед. данных"], category: "full_audit" },
+      { type: "children", name: "Детские услуги", price: 8900, criteriaCount: 15, durationMin: 40, durationMax: 55, description: "Аудит сайта для детей", features: ["Все критерии Корпоративного", "Защита данных детей", "Согласие родителей", "Возрастная верификация", "Безопасный контент", "ФЗ-436 соответствие"], category: "full_audit" },
+      { type: "premium", name: "Premium Audit", price: 39900, criteriaCount: 61, durationMin: 120, durationMax: 240, description: "Полный премиум-аудит с экспертным анализом", features: ["Все критерии всех пакетов", "Экспертный анализ", "Персональные рекомендации", "Подробный план исправлений", "Консультация с юристом", "Приоритетная поддержка"], category: "full_audit" },
     ];
 
-    await db.insert(schema.auditPackages).values(packagesData);
+    for (const pkg of defaultPackages) {
+      const existing = await this.getPackageByType(pkg.type);
+      if (!existing) {
+        console.log(`[SEED] Creating missing package: ${pkg.type}`);
+        await db.insert(schema.auditPackages).values(pkg);
+      }
+    }
   }
 
   async validatePassword(email: string, password: string): Promise<User | null> {
