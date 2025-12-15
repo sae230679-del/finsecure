@@ -1,0 +1,274 @@
+ROLE: Replit Agent / Staff engineer.
+PROJECT: SecureLex.ru (Express + TypeScript + React/Vite + Drizzle + Postgres + pdfkit).​
+GOALS:
+
+Canonical criteria registry (module + types) and correct criteria counts in UI (Service 1 = 45).
+
+Deterministic (non-simulated) checks engine v2 used ONLY for Service 1 “Full PDF report” across all 45 criteria with evidence “URL + найденный текст/заголовок/заголовок страницы/HTTP‑header/selector”.
+
+Remove hardcoded “63 критерия” from UI; Service 2 count must be computed honestly from an explicit registry list.
+
+Add a paid upsell block in Service 1: “Проверка в реестре операторов ПДн РКН” for 10 ₽, with enable + price configurable in SuperAdmin settings (no deploy needed).
+
+Add tests. npm test must pass.
+
+NON‑NEGOTIABLE RULES
+Do NOT change existing behavior/output of server/audit-engine.ts used by current endpoints (keep intact).​
+
+Do NOT break existing endpoints/pages/tests.
+
+No simulations/mocks/random statuses for Service 1 Full PDF v2. Absolutely no getRandomStatus/simulateAuditResults in v2 path.​
+
+Evidence in PDF must be: URL + found text/title/header/selector only (no screenshots).
+
+Service 1 Full PDF = “Экспресс‑проверка по всем критериям без подготовки документов”, NOT Service 2.
+
+Reuse current security constraints (SSRF protections etc.).​
+
+A) CANONICAL CRITERIA REGISTRY (MODULE + TYPES)
+A1) Create module
+Create: shared/criteria-registry.ts
+
+A2) Define exported types
+ts
+export type CriteriaGroup = "fz152" | "fz149" | "cookies" | "technical" | "legal";
+
+export type CriteriaCheckKind =
+  | "page_exists"
+  | "page_contains_text"
+  | "dom_has_selector"
+  | "headers_has"
+  | "tls"
+  | "links_to"
+  | "manual_required";
+
+export type CriteriaStatus = "passed" | "warning" | "failed" | "needs_manual";
+
+export type EvidenceType = "url" | "title" | "text_snippet" | "header" | "selector";
+
+export interface CriteriaEvidence {
+  url: string;
+  type: EvidenceType;
+  value: string;
+  extra?: Record<string, any>;
+}
+
+export interface CriteriaDefinition {
+  id: string;                 // stable id like "fz152.policy.exists"
+  group: CriteriaGroup;
+  title: string;              // RU human title
+  lawRef?: string;            // optional, e.g. "152‑ФЗ"
+  checkKind: CriteriaCheckKind;
+  recommendation: string;     // one-liner fix
+  severity: "critical" | "medium" | "low";
+}
+
+export interface CriteriaResultV2 {
+  id: string;
+  group: CriteriaGroup;
+  title: string;
+  status: CriteriaStatus;
+  evidence?: CriteriaEvidence;
+  details?: string;
+  recommendation: string;
+  severity: "critical" | "medium" | "low";
+}
+A3) Export canonical lists and helpers
+In shared/criteria-registry.ts, export:
+
+SERVICE_1_CRITERIA: CriteriaDefinition[] EXACTLY 45 items matching business list:
+
+ФЗ‑152 = 12
+
+ФЗ‑149 = 4
+
+Cookie = 9
+
+Техбезопасность = 12
+
+Юрстраницы = 8
+
+SERVICE_2_CRITERIA: CriteriaDefinition[] — MUST be explicit and honest:
+
+If Service 2 includes extra “documents prep” coverage, list those as separate criteria (e.g. docs.privacy.ready, docs.consent.form.ready, etc.)
+
+If you cannot justify 63, do not keep it; let registry be truth.
+
+Also export:
+
+ts
+export function countByGroup(list: CriteriaDefinition[]): Record<CriteriaGroup, number>;
+export function totalCount(list: CriteriaDefinition[]): number;
+Acceptance: totalCount(SERVICE_1_CRITERIA) === 45.
+
+B) FIX UI COUNTS (REMOVE HARDCODED “63”)
+B1) Replace hardcoded text
+Search client code for “63” / “63 критерия” and replace with computed registry values:
+
+Service 1 card: show totalCount(SERVICE_1_CRITERIA) => must display 45
+
+Service 2 card: show totalCount(SERVICE_2_CRITERIA) (whatever it is)
+
+B2) Optional breakdown
+If easy: show breakdown “12+4+9+12+8” for Service 1 (computed from countByGroup).
+
+C) DETERMINISTIC CHECK ENGINE V2 (FOR SERVICE 1 FULL PDF ONLY)
+C1) Create server module
+Create: server/compliance-engine-v2.ts
+
+Signature:
+
+ts
+import { CriteriaResultV2 } from "../shared/criteria-registry";
+
+export async function runComplianceChecksV2(websiteUrl: string): Promise<{
+  results: CriteriaResultV2[];
+  totals: { total: number; passed: number; warning: number; failed: number; needs_manual: number; };
+}>;
+C2) Deterministic only
+No random, no simulate. If not reliably verifiable => needs_manual.​
+
+C3) Evidence rules
+For any non-manual status, produce evidence:
+
+URL + found text snippet or page title or header value or selector string.
+
+C4) Minimum viable checks approach (truthful)
+Fetch homepage HTML + headers using existing safe fetch logic patterns (keep SSRF protections).​
+
+Discover or try common legal URLs:
+
+/privacy, /privacy-policy, /policy, /personal-data, /agreement, /offer, /contacts, /cookie, /cookies
+
+Implement heuristics:
+
+page_exists: HTTP 200
+
+page_contains_text: search for key RU phrases and store snippet
+
+dom_has_selector: search for checkbox/banner patterns
+
+headers_has: HSTS/CSP/XFO/XCTO/Referrer-Policy/Permissions-Policy
+
+TLS checks: only if the current stack reliably exposes TLS data; otherwise mark needs_manual (do not fake).
+
+D) SERVICE 1 FULL PDF MUST USE V2 RESULTS (45)
+D1) Add PDF generator path
+In server/pdf-generator.ts (or new file), implement:
+generateService1FullPdfReport(...) that:
+
+calls runComplianceChecksV2(websiteUrl)
+
+prints totals out of 45
+
+prints per-group sections with numbered checks
+
+prints evidence line for each check: “Evidence: <url> — <value>”
+
+includes “Risk ranges by category” table (static) + disclaimer (“не является юридическим заключением”)
+
+D2) Fonts & iPhone Safari
+Use only embedded Cyrillic fonts from server/fonts (Regular + Bold) and keep layout simple (no heavy graphics).​
+
+D3) Wire endpoints
+Ensure the “Service 1 Full PDF” purchase/download flow uses this v2 PDF generator, without touching Service 2.
+
+E) DB / PACKAGE COUNTS (IF USED)
+DB mentions auditpackages has criteriaCount.​
+
+Ensure Service 1 package criteriaCount = 45
+
+Ensure Service 2 package criteriaCount = totalCount(SERVICE_2_CRITERIA)
+If seeded in code, update seed defaults; if editable, update DB defaults and admin UI if present.
+
+F) NEW PAID UPSELL IN SERVICE 1: “ПРОВЕРКА В РЕЕСТРЕ ОПЕРАТОРОВ ПДН РКН” (10 ₽) + ADMIN CONFIG
+Context: RKN operators registry is public; the most reliable search is by INN (also possible by name).​
+
+F1) SuperAdmin settings (systemsettings)
+Add 2 keys in system settings storage (same style as existing aiMode settings in systemsettings):
+
+rknRegistryCheckEnabled: boolean (default true)
+
+rknRegistryCheckPriceRub: number (default 10)
+
+Add admin endpoints (SuperAdmin only):
+
+GET /api/admin/settings/rkn-registry-check → { enabled, priceRub }
+
+PUT /api/admin/settings/rkn-registry-check with body { enabled, priceRub } → returns saved values
+
+F2) Service 1 UI block
+In Service 1 card/page add a block:
+
+Title: “Проверка в реестре операторов ПДн РКН”
+
+Price label: from admin settings (10 ₽ default)
+
+Input: ИНН (preferred) and optional Наименование
+
+Button: “Проверить”
+
+Helper text: “Для точного результата используйте ИНН”
+
+Block visibility controlled by enabled.
+
+F3) Payment gating (10 ₽)
+Implement minimal paid check:
+
+Create a product/order type “rkn_registry_check”
+
+Before executing check, user must have a paid order for this action (or consume a credit).
+
+Price is from systemsettings (admin-configurable).
+(Use existing payment infrastructure patterns; do NOT hardcode price in frontend.)
+
+F4) Backend endpoint for the check
+Add endpoint:
+
+POST /api/rkn/registry-check
+Input: { inn?: string, name?: string } (require at least one)
+Output: { found: boolean, items?: Array<{ ...fieldsReturned... }> }
+
+Important:
+
+Do NOT promise “domain check”; registry lookup is by INN/name and must be presented that way.​
+
+If external scraping is unreliable, implement as “best effort” and return needs_manual-like messaging, but never fake “found”.
+
+G) TESTS (MANDATORY)
+Add tests so npm test passes:
+
+Registry test:
+
+SERVICE_1_CRITERIA.length === 45
+
+breakdown matches 12/4/9/12/8
+
+Admin settings tests for rkn-registry-check GET/PUT (SuperAdmin required)
+
+Validation test:
+
+POST /api/rkn/registry-check with empty body => 400
+
+If payment gating is implemented:
+
+Unpaid user => 402/403
+
+Paid => 200 and returns structure
+
+OUTPUT / ACCEPTANCE CHECKLIST
+You are done only when:
+
+Service 1 shows 45 criteria (computed).
+
+Service 2 shows computed criteria count from explicit registry (no “63” hardcode).
+
+Service 1 Full PDF uses deterministic v2 engine results across all 45 criteria with evidence (URL + text/title/header/selector).
+
+No random/simulated statuses in v2 path.​
+
+RKN registry paid block appears in Service 1, with enable+price from SuperAdmin settings, default 10 ₽.​
+
+All tests pass: npm test.
+
+END.

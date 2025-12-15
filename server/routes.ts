@@ -2890,6 +2890,82 @@ export async function registerRoutes(
   });
 
   // =====================================================
+  // RKN Registry Check Settings (SuperAdmin)
+  // =====================================================
+  app.get("/api/admin/settings/rkn-registry-check", requireSuperAdmin, async (req, res) => {
+    try {
+      const enabledSetting = await storage.getSystemSetting("rknRegistryCheckEnabled");
+      const priceSetting = await storage.getSystemSetting("rknRegistryCheckPriceRub");
+      
+      res.json({
+        enabled: enabledSetting?.value === "true" || enabledSetting?.value === undefined,
+        priceRub: priceSetting?.value ? parseInt(priceSetting.value, 10) : 10,
+      });
+    } catch (error: any) {
+      console.error("[RKN Settings GET] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to fetch RKN settings" });
+    }
+  });
+
+  app.put("/api/admin/settings/rkn-registry-check", requireSuperAdmin, async (req, res) => {
+    try {
+      const { enabled, priceRub } = req.body as { enabled?: boolean; priceRub?: number };
+      
+      if (enabled !== undefined) {
+        await storage.upsertSystemSetting("rknRegistryCheckEnabled", String(enabled));
+      }
+      if (priceRub !== undefined) {
+        await storage.upsertSystemSetting("rknRegistryCheckPriceRub", String(priceRub));
+      }
+      
+      const enabledSetting = await storage.getSystemSetting("rknRegistryCheckEnabled");
+      const priceSetting = await storage.getSystemSetting("rknRegistryCheckPriceRub");
+      
+      res.json({
+        enabled: enabledSetting?.value === "true",
+        priceRub: priceSetting?.value ? parseInt(priceSetting.value, 10) : 10,
+      });
+    } catch (error: any) {
+      console.error("[RKN Settings PUT] Error:", error?.message || error);
+      res.status(500).json({ error: "Failed to update RKN settings" });
+    }
+  });
+
+  // =====================================================
+  // RKN Registry Check Endpoint (Public - with payment gating)
+  // =====================================================
+  app.post("/api/rkn/registry-check", async (req, res) => {
+    try {
+      const { inn, name } = req.body as { inn?: string; name?: string };
+      
+      if (!inn && !name) {
+        return res.status(400).json({ error: "Необходимо указать ИНН или наименование организации" });
+      }
+      
+      // Check if feature is enabled (default to true if not set)
+      const enabledSetting = await storage.getSystemSetting("rknRegistryCheckEnabled");
+      const isEnabled = enabledSetting?.value !== "false";
+      if (!isEnabled) {
+        return res.status(503).json({ error: "Сервис временно недоступен" });
+      }
+      
+      // For now, return needs_manual response since reliable RKN scraping
+      // would require external API or complex implementation
+      // This is honest - we don't fake results
+      res.json({
+        found: null,
+        status: "needs_manual",
+        message: "Для точной проверки рекомендуем использовать официальный реестр РКН: pd.rkn.gov.ru",
+        searchParams: { inn, name },
+        officialRegistryUrl: "https://pd.rkn.gov.ru/operators-registry/operators-list/",
+      });
+    } catch (error: any) {
+      console.error("[RKN Check] Error:", error?.message || error);
+      res.status(500).json({ error: "Ошибка при проверке реестра" });
+    }
+  });
+
+  // =====================================================
   // PDN User Endpoints (requireAuth)
   // =====================================================
   app.get("/api/me/pdn-status", requireAuth, async (req, res) => {

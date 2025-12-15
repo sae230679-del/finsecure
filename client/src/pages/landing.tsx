@@ -362,7 +362,7 @@ export default function LandingPage() {
                     <div className="grid grid-cols-2 gap-2 sm:gap-3">
                       <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
                         <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
-                        <span>63 критерия</span>
+                        <span>53 критерия</span>
                       </div>
                       <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
                         <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-green-500 shrink-0" />
