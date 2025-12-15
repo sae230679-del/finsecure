@@ -5,7 +5,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { URLInput } from "@/components/url-input";
-import { Shield, ArrowRight, Loader2, AlertTriangle, CheckCircle2, XCircle, FileText, CreditCard, Zap, FileCheck, Building2, HelpCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Shield, ArrowRight, Loader2, AlertTriangle, CheckCircle2, XCircle, FileText, CreditCard, Zap, FileCheck, Building2, HelpCircle, Search } from "lucide-react";
 import { ScoreIndicator, FineEstimate, ResultsSummary } from "@/components/score-indicator";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
@@ -185,10 +187,66 @@ export function ExpressCheck() {
   const [result, setResult] = useState<ExpressResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [showInnModal, setShowInnModal] = useState(false);
+  const [innInput, setInnInput] = useState("");
+  const [isCheckingInn, setIsCheckingInn] = useState(false);
   const { isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleInnCheck = async () => {
+    if (!innInput || innInput.replace(/\D/g, "").length < 10) {
+      toast({
+        title: "Ошибка",
+        description: "Введите корректный ИНН (10 или 12 цифр)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCheckingInn(true);
+    try {
+      const response = await apiRequest("POST", "/api/public/rkn/check", { inn: innInput });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Ошибка проверки");
+      }
+
+      setResult((prev) => prev ? {
+        ...prev,
+        rknCheck: {
+          status: data.status,
+          confidence: data.confidence,
+          used: "inn",
+          query: { inn: innInput },
+          details: data.details,
+          needsCompanyDetails: false,
+          evidence: {
+            innFound: innInput,
+            nameFound: data.companyName,
+          },
+        },
+      } : null);
+
+      setShowInnModal(false);
+      setInnInput("");
+      
+      toast({
+        title: data.status === "passed" ? "Организация найдена" : "Не найдено",
+        description: data.details,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Ошибка",
+        description: err.message || "Не удалось проверить ИНН",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingInn(false);
+    }
+  };
 
   useEffect(() => {
     if (!checkToken || !isChecking) return;
@@ -426,8 +484,20 @@ export function ExpressCheck() {
                   </div>
                 )}
                 {result.rknCheck.needsCompanyDetails && (
-                  <div className="mt-2 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
-                    Для полной проверки в реестре РКН закажите полный аудит и укажите ИНН организации
+                  <div className="mt-2 space-y-2">
+                    <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+                      ИНН не найден на сайте. Укажите ИНН для проверки в реестре РКН
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => setShowInnModal(true)}
+                      data-testid="button-open-inn-modal"
+                    >
+                      <Search className="w-3 h-3 mr-2" />
+                      Проверить по ИНН
+                    </Button>
                   </div>
                 )}
               </div>
@@ -648,6 +718,66 @@ export function ExpressCheck() {
           </Tabs>
         )}
       </CardContent>
+
+      <Dialog open={showInnModal} onOpenChange={setShowInnModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5" />
+              Проверка в реестре РКН
+            </DialogTitle>
+            <DialogDescription>
+              Введите ИНН организации для проверки регистрации в реестре операторов персональных данных Роскомнадзора
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="inn-input">ИНН организации</Label>
+              <Input
+                id="inn-input"
+                type="text"
+                placeholder="Например: 7707083893"
+                value={innInput}
+                onChange={(e) => setInnInput(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                maxLength={12}
+                data-testid="input-inn"
+              />
+              <p className="text-xs text-muted-foreground">
+                10 цифр для юрлиц, 12 для ИП
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowInnModal(false);
+                setInnInput("");
+              }}
+              data-testid="button-cancel-inn"
+            >
+              Отмена
+            </Button>
+            <Button 
+              onClick={handleInnCheck}
+              disabled={isCheckingInn || innInput.length < 10}
+              data-testid="button-submit-inn"
+            >
+              {isCheckingInn ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Проверка...
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Проверить
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -2370,5 +2370,37 @@ export async function registerRoutes(
     }
   });
 
+  // RKN registry check by INN (public endpoint)
+  app.post("/api/public/rkn/check", async (req: Request, res: Response) => {
+    try {
+      const { inn } = req.body;
+      
+      if (!inn || typeof inn !== "string") {
+        return res.status(400).json({ error: "ИНН обязателен и должен быть строкой" });
+      }
+
+      const cleanInn = inn.trim().replace(/\D/g, "");
+      if (cleanInn.length < 10 || cleanInn.length > 12) {
+        return res.status(400).json({ error: "ИНН должен содержать 10 или 12 цифр" });
+      }
+
+      const { checkRknRegistry } = await import("./rkn-parser");
+      const result = await checkRknRegistry(cleanInn);
+
+      res.json({
+        status: result.isRegistered ? "passed" : "failed",
+        confidence: result.confidence,
+        details: result.details,
+        companyName: result.companyName,
+        registrationNumber: result.registrationNumber,
+        registrationDate: result.registrationDate,
+        fromCache: result.fromCache,
+      });
+    } catch (error: any) {
+      console.error("[RKN] Check error:", error?.message || error);
+      res.status(500).json({ error: "Ошибка проверки реестра РКН" });
+    }
+  });
+
   return httpServer;
 }
