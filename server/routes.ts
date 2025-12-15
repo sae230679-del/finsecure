@@ -1549,6 +1549,7 @@ export async function registerRoutes(
       const contactsSetting = await storage.getSystemSetting("contact_settings");
       const yandexMetrikaSetting = await storage.getSystemSetting("yandex_metrika_code");
       const yandexWebmasterSetting = await storage.getSystemSetting("yandex_webmaster_verification");
+      const widgetCodeSetting = await storage.getSystemSetting("widget_code");
       
       let requisites = null;
       let contacts = null;
@@ -1575,6 +1576,7 @@ export async function registerRoutes(
         contacts,
         yandexMetrikaCode: yandexMetrikaSetting?.value || "",
         yandexWebmasterVerification: yandexWebmasterSetting?.value || "",
+        widgetCode: widgetCodeSetting?.value || "",
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch settings" });

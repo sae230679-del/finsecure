@@ -36,6 +36,7 @@ export default function SuperAdminSettingsPage() {
     ai_mode: "gigachat_only",
     yandex_metrika_code: "",
     yandex_webmaster_verification: "",
+    widget_code: "",
   });
 
   const [contactData, setContactData] = useState({
@@ -920,6 +921,61 @@ export default function SuperAdminSettingsPage() {
                     <li>Скопируйте значение content из предложенного метатега</li>
                     <li>Например, из <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">&lt;meta name="yandex-verification" content="e493e99ce1e2db08" /&gt;</code> нужно скопировать только <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">e493e99ce1e2db08</code></li>
                   </ol>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5" />
+              Онлайн-консультант
+            </CardTitle>
+            <CardDescription>
+              Код виджета чата (EnvyBox, JivoSite, Tawk.to и др.)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="widget_code">Код виджета</Label>
+              <div className="flex gap-2">
+                <Textarea
+                  id="widget_code"
+                  value={formData.widget_code}
+                  onChange={(e) => setFormData({ ...formData, widget_code: e.target.value })}
+                  placeholder="<!-- Widget Code -->&#10;<script>...</script>"
+                  rows={8}
+                  className="font-mono text-sm"
+                  data-testid="input-widget-code"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => handleSave("widget_code")}
+                  disabled={updateSettingMutation.isPending}
+                  data-testid="button-save-widget-code"
+                >
+                  <Save className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Вставьте полный код виджета онлайн-консультанта. Код будет добавлен на все страницы сайта.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-md bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
+              <div className="flex items-start gap-2">
+                <MessageCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                <div className="text-sm text-green-700 dark:text-green-300">
+                  <strong>Поддерживаемые сервисы:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1">
+                    <li>EnvyBox (envybox.io)</li>
+                    <li>JivoSite (jivo.ru)</li>
+                    <li>Tawk.to</li>
+                    <li>Carrot Quest</li>
+                    <li>И другие виджеты чатов</li>
+                  </ul>
                 </div>
               </div>
             </div>

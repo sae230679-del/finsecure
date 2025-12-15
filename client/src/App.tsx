@@ -10,6 +10,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ColorModeToggle } from "@/components/color-mode-toggle";
 import { MaintenanceOverlay } from "@/components/maintenance-overlay";
 import { YandexMetrika } from "@/components/yandex-metrika";
+import { WidgetScript } from "@/components/widget-script";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import AuthPage from "@/pages/auth";
@@ -413,6 +414,7 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <YandexMetrika />
+            <WidgetScript />
             <MaintenanceCheck>
               <Router />
             </MaintenanceCheck>
