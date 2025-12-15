@@ -2014,23 +2014,31 @@ export async function registerRoutes(
   }
 
   // Public API: Get active packages with prices (read-only, no auth required)
+  // Supports filters: ?type=landing&service=full_audit|express_pdf
   app.get("/api/public/packages", async (req, res) => {
     try {
       const typeFilter = req.query.type as string | undefined;
+      const serviceFilter = req.query.service as string | undefined;
       const packages = await storage.getPackages();
       
       const activePackages = packages
         .filter(pkg => pkg.isActive)
         .filter(pkg => !typeFilter || pkg.type === typeFilter)
-        .map(pkg => ({
-          id: pkg.id,
-          type: pkg.type,
-          name: pkg.name,
-          price: pkg.price,
-          category: pkg.category,
-          description: pkg.description,
-          isActive: pkg.isActive,
-        }));
+        .map(pkg => {
+          // Derive service from package type
+          const service = pkg.type === "expressreport" ? "express_pdf" : "full_audit";
+          return {
+            id: pkg.id,
+            type: pkg.type,
+            name: pkg.name,
+            price: pkg.price,
+            category: pkg.category,
+            description: pkg.description,
+            isActive: pkg.isActive,
+            service,
+          };
+        })
+        .filter(pkg => !serviceFilter || pkg.service === serviceFilter);
       
       res.json(activePackages);
     } catch (error) {
