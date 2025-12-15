@@ -3015,7 +3015,7 @@ export async function registerRoutes(
   // =====================================================
   // SEO Pages Public Endpoint
   // =====================================================
-  app.get("/seo/:slug", async (req, res) => {
+  app.get("/api/public/seo/:slug", async (req, res) => {
     try {
       const page = await storage.getSeoPageBySlug(req.params.slug);
       if (!page || !page.isActive) {
