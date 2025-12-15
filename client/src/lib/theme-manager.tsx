@@ -74,6 +74,23 @@ const defaultLayout: ThemeLayout = {
 
 const ThemeManagerContext = createContext<ThemeManagerContextType | undefined>(undefined);
 
+// Safe localStorage wrapper for iOS Safari private browsing
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Silently fail on iOS Safari private browsing
+  }
+}
+
 function applyColorsToDocument(colors: ThemeColors, isDark: boolean) {
   const root = document.documentElement;
   
@@ -111,7 +128,7 @@ type ActiveThemeResponse = {
 export function ThemeManagerProvider({ children }: { children: React.ReactNode }) {
   const [colorMode, setColorModeState] = useState<ColorMode>(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("colorMode") as ColorMode;
+      const stored = safeGetItem("colorMode") as ColorMode;
       if (stored) return stored;
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
@@ -144,7 +161,7 @@ export function ThemeManagerProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     applyColorsToDocument(colors, colorMode === "dark");
-    localStorage.setItem("colorMode", colorMode);
+    safeSetItem("colorMode", colorMode);
   }, [colors, colorMode]);
 
   useEffect(() => {
