@@ -777,7 +777,12 @@ export async function registerRoutes(
       }
       
       const finalAmount = pkg.price;
-      console.log(`[PAYMENT] Creating payment for auditId=${audit.id}, packageId=${pkg.id}, price=${finalAmount} (from DB)`);
+      
+      if (finalAmount <= 0) {
+        return res.status(400).json({ error: "Невозможно создать платёж на сумму 0 рублей" });
+      }
+      
+      console.log(`[PAYMENT] Creating payment for auditId=${audit.id}, packageId=${pkg.id}, price=${finalAmount} RUB (from DB)`);
 
       const yookassaEnabled = await storage.getSystemSetting("yookassa_enabled");
       const shopIdSetting = await storage.getSystemSetting("yookassa_shop_id");
@@ -803,9 +808,13 @@ export async function registerRoutes(
           mir: { type: "bank_card" },
         };
         
+        const paymentDescription = pkg.type === "express_report"
+          ? "Оплата за полный отчет (экспресс-проверка)"
+          : `Оплата за полный аудит сайта: ${pkg.name}`;
+        
         const yookassaPayload: any = {
           amount: {
-            value: (finalAmount / 100).toFixed(2),
+            value: finalAmount.toFixed(2),
             currency: "RUB",
           },
           capture: true,
@@ -813,7 +822,7 @@ export async function registerRoutes(
             type: "redirect",
             return_url: `${baseUrl}/payment-result?auditId=${audit.id}`,
           },
-          description: `${pkg.name} - ${audit.websiteUrlNormalized}`,
+          description: paymentDescription,
           metadata: {
             auditId: audit.id,
             userId: req.session.userId,
@@ -868,7 +877,7 @@ export async function registerRoutes(
             userId: req.session.userId!,
             auditId: audit.id,
             amount: finalAmount,
-            description: `${pkg.name} - ${audit.websiteUrlNormalized} (${paymentMethodNames[data.paymentMethod]})`,
+            description: `${paymentDescription} (${paymentMethodNames[data.paymentMethod]})`,
             status: "pending",
             yandexPaymentId: responseData.id,
           });
@@ -888,11 +897,15 @@ export async function registerRoutes(
 
       await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
 
+      const mockPaymentDescription = pkg.type === "express_report"
+        ? "Оплата за полный отчет (экспресс-проверка)"
+        : `Оплата за полный аудит сайта: ${pkg.name}`;
+        
       const payment = await storage.createPayment({
         userId: req.session.userId!,
         auditId: audit.id,
         amount: finalAmount,
-        description: `${pkg.name} - ${audit.websiteUrlNormalized} (${paymentMethodNames[data.paymentMethod]})`,
+        description: `${mockPaymentDescription} (${paymentMethodNames[data.paymentMethod]})`,
         status: "completed",
         yandexPaymentId: `MOCK-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
       });
