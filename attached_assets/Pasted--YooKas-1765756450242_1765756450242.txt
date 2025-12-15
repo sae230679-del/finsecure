@@ -1,0 +1,131 @@
+Цель
+Экспресс‑отчёт после экспресс‑проверки должен быть платным и оплачиваться через текущий YooKassa flow (POST /api/payments/create + webhook).​
+
+Цена должна всегда браться из таблицы пакетов (audit_packages) и редактироваться через админку.​
+
+Никаких “900” в коде — только данные из БД.​
+
+Шаг 0 — Контракт и текущая схема
+Найди в коде:
+
+POST /api/express-report/purchase (сейчас он бесплатный и ставит audit completed)​
+
+POST /api/payments/create (создание YooKassa)​
+
+webhook POST /api/yookassa/webhook​
+
+Покажи схему audit_packages (какие поля: type, name, price, возможно isActive).​
+
+Зафиксируй: какой type используется для express‑отчёта (например express_report).​
+
+Шаг 1 — Сделать express‑отчёт платным (без хардкода цены)
+1.1 Новый flow (минимальные изменения)
+Переделай POST /api/express-report/purchase так, чтобы он:
+
+принимал { token: string }, требует requireAuth (как сейчас).​
+
+создавал audit из public express результата, но статус ставил pending_payment (или твой эквивалент), НЕ completed.​
+
+сохранял packageType/type = express_report в audit (чтобы потом правильно определить цену).​
+
+возвращал { auditId }.
+
+Важно: этот endpoint не создаёт платёж сам — платёж создаётся через общий POST /api/payments/create.
+
+1.2 Ограничить доступ до оплаты
+Сделай защиту:
+
+GET /api/audits/:id/pdf возвращает 402/403, если audit не оплачен.​
+
+UI страницы результатов показывает кнопку “Оплатить”, если статус pending_payment.
+
+Шаг 2 — Цена из админки (audit_packages)
+2.1 payments/create: источник правды по цене
+Переделай POST /api/payments/create так, чтобы:
+
+сервер не доверял finalAmount из клиента (если оно есть) — игнорировать или использовать только как “display”.
+
+цена рассчитывалась по auditId → определить packageType → взять audit_packages.price.​
+
+если package не найден/неактивен — 400 с понятной ошибкой.
+
+Проверка:
+
+rg -n "900|15900|39900|59900|29900" server client — в коде не должно остаться захардкоженных цен. ​
+
+2.2 Админка: редактирование цены express‑отчёта
+В админ‑разделе добавь экран “Пакеты и цены”:
+
+таблица audit_packages (type, name, price, active)
+
+возможность менять price (в рублях) для express_report и других пакетов
+
+сохранение через backend endpoint (только admin/superadmin)
+
+Если такого endpoint ещё нет — добавь:
+
+GET /api/admin/audit-packages (requireAdmin)
+
+PUT /api/admin/audit-packages/:id (requireAdmin) body { price, name?, isActive? } с zod‑валидацией.​
+
+Шаг 3 — Приёмка YooKassa (реальные доказательства)
+Сделай полный тестовый сценарий на dev/staging (желательно на домене с HTTPS, чтобы cookies работали как в проде).​
+
+3.1 До оплаты
+Экспресс‑проверка → token.
+
+POST /api/express-report/purchase { token } → auditId со статусом pending_payment.
+
+GET /api/audits/:id/pdf → 402/403.
+
+3.2 Создание платежа
+POST /api/payments/create { auditId, paymentMethod: "sbp" }
+Ожидается:
+
+success=true
+
+confirmationUrl есть
+
+в БД создан order/payment со статусом pending и суммой = audit_packages.price для express_report.​
+
+3.3 После оплаты и webhook
+Оплатить через confirmationUrl.
+
+Убедиться, что POST /api/yookassa/webhook реально пришёл и:
+
+order/payment pending → paid
+
+audit pending_payment → completed/paid
+
+теперь GET /api/audits/:id/pdf отдаёт 200 и pdf скачивается.
+
+Доказательства:
+
+логи webhook (event + paymentId + auditId)
+
+SQL “до/после” по orders/payments и audits
+
+curl -I pdf с Content-Type/Disposition/Length.
+
+Шаг 4 — UX изменения
+На главной/результате экспресса:
+
+показывай кнопку “Купить PDF‑отчёт” (или “Получить отчёт”), которая запускает login (если надо) → purchase → payments/create → redirect на YooKassa.​
+
+После успешной оплаты:
+
+показывай кнопку “Скачать PDF” и статус “Оплачено”.
+
+Шаг 5 — Итоги
+В конце дай:
+
+список изменённых файлов
+
+список новых/изменённых эндпоинтов
+
+вывод grep на хардкод цен (должно быть пусто)
+
+короткий чек‑лист “как завтра включить реальный приём платежей” (env + webhook url).
+
+Вопрос (без него агент может сделать не то):
+В админке цена должна быть в рублях

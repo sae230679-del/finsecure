@@ -312,10 +312,10 @@ export function ExpressCheck() {
 
       toast({
         title: "Отчет создан",
-        description: "Переходим к вашему отчету...",
+        description: "Переходим к оплате...",
       });
       
-      navigate(`/dashboard/audits/${data.auditId}`);
+      navigate(`/checkout/${data.auditId}`);
     } catch (err: any) {
       toast({
         title: "Ошибка",

@@ -483,6 +483,11 @@ export async function registerRoutes(
         }
       }
 
+      if (audit.status === "pending_payment") {
+        console.log(`[PDF] Audit pending payment: status=${audit.status}`);
+        return res.status(402).json({ error: "Требуется оплата для доступа к PDF-отчёту" });
+      }
+
       if (audit.status !== "completed") {
         console.log(`[PDF] Audit not completed: status=${audit.status}`);
         return res.status(400).json({ error: "Audit is not completed yet" });
@@ -749,7 +754,13 @@ export async function registerRoutes(
       };
 
       const user = await storage.getUserById(req.session.userId!);
-      const finalAmount = data.finalAmount || pkg.price;
+      
+      if (!pkg.isActive) {
+        return res.status(400).json({ error: "Пакет временно недоступен для оплаты" });
+      }
+      
+      const finalAmount = pkg.price;
+      console.log(`[PAYMENT] Creating payment for auditId=${audit.id}, packageId=${pkg.id}, price=${finalAmount} (from DB)`);
 
       const yookassaEnabled = await storage.getSystemSetting("yookassa_enabled");
       const shopIdSetting = await storage.getSystemSetting("yookassa_shop_id");
@@ -976,12 +987,23 @@ export async function registerRoutes(
   });
 
   const updatePackageSchema = z.object({
-    price: z.number().optional(),
+    name: z.string().min(1).optional(),
+    price: z.number().min(0).optional(),
     description: z.string().optional(),
     criteriaTemplates: z.array(criteriaTemplateSchema).optional(),
     criteriaCount: z.number().optional(),
     durationMin: z.number().optional(),
     durationMax: z.number().optional(),
+    isActive: z.boolean().optional(),
+  });
+
+  app.get("/api/admin/audit-packages", requireAdmin, async (req, res) => {
+    try {
+      const packages = await storage.getPackages();
+      res.json(packages);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch packages" });
+    }
   });
 
   app.patch("/api/admin/packages/:id", requireAdmin, async (req, res) => {
@@ -993,11 +1015,13 @@ export async function registerRoutes(
         return res.status(400).json({ error: validationResult.error.errors[0].message });
       }
       
-      const { price, description, criteriaTemplates, criteriaCount, durationMin, durationMax } = validationResult.data;
+      const { name, price, description, criteriaTemplates, criteriaCount, durationMin, durationMax, isActive } = validationResult.data;
       
       const updateData: Record<string, unknown> = {};
+      if (name !== undefined) updateData.name = name;
       if (price !== undefined) updateData.price = price;
       if (description !== undefined) updateData.description = description;
+      if (isActive !== undefined) updateData.isActive = isActive;
       if (criteriaTemplates !== undefined) {
         const validTemplates = criteriaTemplates.filter(t => t.name.trim().length > 0);
         updateData.criteriaTemplates = validTemplates;
@@ -2196,7 +2220,12 @@ export async function registerRoutes(
                 }).catch(err => console.error("Failed to send payment email:", err));
               }
               
-              startAuditProcessing(audit, user, pkg);
+              if (pkg.type === "express_report") {
+                await storage.updateAuditStatus(auditId, "completed", new Date());
+                console.log(`[Yookassa] Express report ${auditId} marked as completed (already has results)`);
+              } else {
+                startAuditProcessing(audit, user, pkg);
+              }
             }
           }
         }
@@ -2244,9 +2273,13 @@ export async function registerRoutes(
       }
 
       const expressReportPackage = await storage.getPackageByType("express_report");
-      console.log(`[EXPRESS-REPORT] Package found:`, expressReportPackage ? `id=${expressReportPackage.id}` : 'null');
+      console.log(`[EXPRESS-REPORT] Package found:`, expressReportPackage ? `id=${expressReportPackage.id}, price=${expressReportPackage.price}` : 'null');
       if (!expressReportPackage) {
         return res.status(500).json({ error: "Пакет отчета не найден" });
+      }
+
+      if (!expressReportPackage.isActive) {
+        return res.status(400).json({ error: "Пакет экспресс-отчёта временно недоступен" });
       }
 
       const audit = await storage.createAudit({
@@ -2257,7 +2290,11 @@ export async function registerRoutes(
       });
 
       if (expressAudit.summaryJson) {
-        const criteriaResults: CriteriaResult[] = (expressAudit.summaryJson as any[]).map((c: any) => ({
+        const summaryData = expressAudit.summaryJson as any;
+        const checks = Array.isArray(summaryData) ? summaryData : (summaryData?.checks || []);
+        const rknCheck = summaryData?.rknCheck || null;
+
+        const criteriaResults: CriteriaResult[] = checks.map((c: any) => ({
           name: c.name,
           description: c.description,
           status: c.status,
@@ -2268,16 +2305,21 @@ export async function registerRoutes(
         await storage.createAuditResult({
           auditId: audit.id,
           criteriaJson: criteriaResults,
+          rknCheckJson: rknCheck,
           scorePercent: expressAudit.scorePercent || 0,
           severity: expressAudit.severity || "yellow",
         });
-
-        await storage.updateAuditStatus(audit.id, "completed", new Date());
       }
+
+      await storage.updateAuditStatus(audit.id, "pending_payment");
+      console.log(`[EXPRESS-REPORT] Created audit id=${audit.id} with status pending_payment, price=${expressReportPackage.price}`);
 
       res.json({ 
         auditId: audit.id,
-        message: "Отчет создан успешно" 
+        packageId: expressReportPackage.id,
+        price: expressReportPackage.price,
+        packageName: expressReportPackage.name,
+        message: "Отчет создан, ожидает оплаты" 
       });
     } catch (error) {
       console.error("Express report purchase error:", error);

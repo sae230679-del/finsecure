@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +18,13 @@ import {
   Download,
   RefreshCw,
   ExternalLink,
+  CreditCard,
+  Lock,
 } from "lucide-react";
 
 export default function AuditDetailPage() {
   const [, params] = useRoute("/dashboard/audits/:id");
+  const [, navigate] = useLocation();
   const auditId = params?.id;
 
   const { data: audit, isLoading, refetch } = useQuery<AuditWithDetails>({
@@ -50,6 +53,13 @@ export default function AuditDetailPage() {
           <Badge variant="secondary" className="gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
             Обработка
+          </Badge>
+        );
+      case "pending_payment":
+        return (
+          <Badge variant="secondary" className="gap-1 bg-amber-500/10 text-amber-600">
+            <CreditCard className="h-3 w-3" />
+            Ожидает оплаты
           </Badge>
         );
       case "failed":
@@ -165,7 +175,57 @@ export default function AuditDetailPage() {
         </div>
       </div>
 
-      {audit.status === "processing" ? (
+      {audit.status === "pending_payment" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-amber-500" />
+              Требуется оплата
+            </CardTitle>
+            <CardDescription>
+              Для доступа к полному отчету необходимо оплатить услугу
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="p-4 border rounded-lg bg-muted/50 space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium">{audit.package?.name || "Отчет"}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {audit.websiteUrlNormalized}
+                  </p>
+                </div>
+                <p className="text-2xl font-bold">
+                  {audit.package?.price ? formatPrice(audit.package.price) : "900 ₽"}
+                </p>
+              </div>
+              <ul className="text-sm text-muted-foreground space-y-2">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  PDF с детальным разбором каждого нарушения
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  Информация о штрафах и ссылки на законы
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  Пошаговые рекомендации по исправлению
+                </li>
+              </ul>
+              <Button 
+                className="w-full" 
+                size="lg"
+                onClick={() => navigate(`/checkout/${auditId}`)}
+                data-testid="button-pay-for-report"
+              >
+                <CreditCard className="h-4 w-4 mr-2" />
+                Оплатить и получить отчёт
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : audit.status === "processing" ? (
         <Card>
           <CardHeader>
             <CardTitle>Проверка в процессе</CardTitle>
