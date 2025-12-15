@@ -118,6 +118,24 @@ export default function SuperAdminPaymentSettingsPage() {
   });
 
   const handleSaveAll = async () => {
+    // Validation: prevent enabling without credentials
+    if (formData.yookassa_enabled === "true" && !isYookassaConfigured) {
+      toast({
+        title: "Ошибка валидации",
+        description: "Нельзя включить ЮKassa без Shop ID и секретного ключа. Заполните обязательные поля.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (formData.robokassa_enabled === "true" && !isRobokassaConfigured) {
+      toast({
+        title: "Ошибка валидации",
+        description: "Нельзя включить Robokassa без логина и паролей. Заполните обязательные поля.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     try {
       await Promise.all(
         Object.entries(formData).map(([key, value]) =>
@@ -249,6 +267,23 @@ export default function SuperAdminPaymentSettingsPage() {
                     : "Введите Shop ID и секретный ключ из личного кабинета ЮKassa."}
               </CardDescription>
             </CardHeader>
+            {!isYookassaConfigured && (
+              <CardContent>
+                <div className="flex items-start gap-3 p-4 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-amber-800 dark:text-amber-200">Обязательные поля для подключения ЮKassa:</p>
+                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside space-y-1">
+                      <li><strong>Shop ID</strong> - идентификатор магазина (число, например: 123456)</li>
+                      <li><strong>Секретный ключ</strong> - ключ API (начинается с live_ или test_)</li>
+                    </ul>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 pt-2">
+                      Получите данные в личном кабинете ЮKassa: yookassa.ru &rarr; Интеграция &rarr; Ключи API
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            )}
           </Card>
 
         <Card>
@@ -562,6 +597,24 @@ export default function SuperAdminPaymentSettingsPage() {
                     : "Введите логин и пароли из личного кабинета Robokassa."}
               </CardDescription>
             </CardHeader>
+            {!isRobokassaConfigured && (
+              <CardContent>
+                <div className="flex items-start gap-3 p-4 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p className="font-medium text-amber-800 dark:text-amber-200">Обязательные поля для подключения Robokassa:</p>
+                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside space-y-1">
+                      <li><strong>Логин мерчанта</strong> - идентификатор магазина в Robokassa</li>
+                      <li><strong>Пароль 1</strong> - для формирования подписи запроса</li>
+                      <li><strong>Пароль 2</strong> - для проверки подписи ответа</li>
+                    </ul>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 pt-2">
+                      Получите данные в личном кабинете Robokassa: robokassa.ru &rarr; Мои магазины &rarr; Технические настройки
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            )}
           </Card>
 
           <Card>
